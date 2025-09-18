@@ -1,0 +1,13 @@
+# Core
+Django>=5.0
+psycopg[binary]
+djangorestframework
+
+# API Docs
+drf-spectacular
+
+# Testing
+pytest
+pytest-django
+pytest-cov
+factory-boy

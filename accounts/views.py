@@ -9,7 +9,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from accounts.serializers import SPOSignupStartSerializer, SPOProfileCompleteSerializer, \
-    EmailTokenObtainPairSerializer, LogoutSerializer, ForgotPasswordSerializer, VerifyCodeSerializer, ResetPasswordSerializer
+    EmailTokenObtainPairSerializer, LogoutSerializer, ForgotPasswordSerializer, VerifyCodeSerializer, ResetPasswordSerializer, \
+    ProfileSerializer, ProfileUpdateSerializer, ChangePasswordSerializer
+
 from organizations.utils import get_or_create_progress
 
 class SPOSignupStartView(APIView):
@@ -186,3 +188,50 @@ class ResetPasswordView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({"message": "Password reset successful."})
+    
+# -------- Profile (GET+PATCH at same URL) --------
+class ProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses={200: ProfileSerializer})
+    def get(self, request):
+        return Response(ProfileSerializer(request.user).data)
+
+    @extend_schema(request=ProfileUpdateSerializer, responses={200: ProfileSerializer})
+    def patch(self, request):
+        ser = ProfileUpdateSerializer(data=request.data, context={"request": request})
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(ProfileSerializer(request.user).data)
+
+
+# -------- Change Password --------
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=ChangePasswordSerializer,
+        responses={205: dict, 400: dict},
+        examples=[
+            OpenApiExample(
+                "Change password payload",
+                value={
+                    "current_password": "OldPass123!",
+                    "new_password": "NewPass123!",
+                    "confirm_password": "NewPass123!"
+                },
+                request_only=True
+            ),
+            OpenApiExample(
+                "Change password response",
+                value={"message": "Password updated. Please log in again."},
+                response_only=True
+            ),
+        ],
+    )
+    def post(self, request):
+        ser = ChangePasswordSerializer(data=request.data, context={"request": request})
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        # do NOT rotate tokens here. FE should call logout (to blacklist refresh) and force re-login.
+        return Response({"message": "Password updated. Please log in again."}, status=205)

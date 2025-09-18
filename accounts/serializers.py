@@ -1,4 +1,4 @@
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, password_validation
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
@@ -171,4 +171,93 @@ class ResetPasswordSerializer(serializers.Serializer):
         user.set_password(self.validated_data["new_password"])
         user.save()
         code_obj.delete()  # invalidate code
+        return user
+
+# ---------- Profile ----------
+class ProfileSerializer(serializers.Serializer):
+    # Read-only consolidated view
+    user = serializers.SerializerMethodField()
+    organization = serializers.SerializerMethodField()
+
+    def get_user(self, obj):
+        u: User = obj
+        return {
+            "email": u.email,
+            "first_name": u.first_name,
+            "last_name": u.last_name,
+            "phone": getattr(u, "phone", ""),
+            "role": u.role,
+        }
+
+    def get_organization(self, obj):
+        u: User = obj
+        org: Organization | None = getattr(u, "organization", None)
+        if not org:
+            return None
+        return {
+            "name": org.name,
+            "registration_type": org.registration_type,
+            "date_of_incorporation": org.date_of_incorporation,
+            "gst_number": org.gst_number,
+            "cin_number": org.cin_number,
+        }
+
+class ProfileUpdateSerializer(serializers.Serializer):
+    # Only basic profile + legal basics
+    first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    last_name  = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    phone      = serializers.CharField(required=False, allow_blank=True, max_length=20)
+
+    org_name            = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    registration_type   = serializers.ChoiceField(choices=Organization.RegistrationType.choices, required=False)
+    date_of_incorporation = serializers.DateField(required=False, allow_null=True)
+    gst_number          = serializers.CharField(required=False, allow_blank=True, max_length=50)
+    cin_number          = serializers.CharField(required=False, allow_blank=True, max_length=50)
+
+    def save(self, **kwargs):
+        u: User = self.context["request"].user
+        # Update user fields
+        for f in ["first_name", "last_name", "phone"]:
+            if f in self.validated_data:
+                setattr(u, f, self.validated_data[f])
+        u.save()
+
+        # Update organization (if exists)
+        org: Organization | None = getattr(u, "organization", None)
+        if org:
+            mapping = {
+                "org_name": "name",
+                "registration_type": "registration_type",
+                "date_of_incorporation": "date_of_incorporation",
+                "gst_number": "gst_number",
+                "cin_number": "cin_number",
+            }
+            dirty = []
+            for payload_key, model_field in mapping.items():
+                if payload_key in self.validated_data:
+                    setattr(org, model_field, self.validated_data[payload_key])
+                    dirty.append(model_field)
+            if dirty:
+                org.save(update_fields=dirty)
+        return u
+
+# ---------- Change Password ----------
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password     = serializers.CharField(write_only=True, min_length=8)
+    confirm_password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate(self, attrs):
+        user: User = self.context["request"].user
+        if not user.check_password(attrs["current_password"]):
+            raise serializers.ValidationError({"current_password": "Current password is incorrect."})
+        if attrs["new_password"] != attrs["confirm_password"]:
+            raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+        password_validation.validate_password(attrs["new_password"], user=user)
+        return attrs
+
+    def save(self, **kwargs):
+        user: User = self.context["request"].user
+        user.set_password(self.validated_data["new_password"])
+        user.save(update_fields=["password"])
         return user

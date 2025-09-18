@@ -19,7 +19,7 @@ from django.urls import path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from accounts.views import SPOSignupStartView, SPOSignupCompleteView, LoginView, \
-    RefreshView, LogoutView, ForgotPasswordView, VerifyCodeView, ResetPasswordView
+    RefreshView, LogoutView, ForgotPasswordView, VerifyCodeView, ResetPasswordView, ProfileView, ChangePasswordView
 
 from organizations.views import OnboardingProgressView, OnboardingAdvanceView, OnboardingStep2View, \
     OnboardingStep3View, OnboardingFinishView, MetaOptionsView
@@ -45,6 +45,10 @@ urlpatterns = [
     path("api/auth/password/forgot/", ForgotPasswordView.as_view(), name="password-forgot"),
     path("api/auth/password/verify-code/", VerifyCodeView.as_view(), name="password-verify-code"),
     path("api/auth/password/reset/", ResetPasswordView.as_view(), name="password-reset"),
+
+    # SPO Profile
+    path("api/profile", ProfileView.as_view(), name="profile"),                 # GET, PATCH
+    path("api/auth/change-password/", ChangePasswordView.as_view(), name="change-password"),
 
     #Organizations
     path("api/onboarding", OnboardingProgressView.as_view(), name="onboarding-progress"),

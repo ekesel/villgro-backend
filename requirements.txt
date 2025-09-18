@@ -2,6 +2,7 @@
 Django>=5.0
 psycopg[binary]
 djangorestframework
+djangorestframework-simplejwt
 
 # API Docs
 drf-spectacular

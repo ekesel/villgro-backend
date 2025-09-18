@@ -17,6 +17,12 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+    TokenVerifyView,
+)
+from accounts.views import SPOSignupStartView, SPOSignupCompleteView, LoginView, RefreshView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -24,4 +30,12 @@ urlpatterns = [
     # API schema & docs
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+
+    # SPO Signup
+    path("api/auth/spo-signup/start/", SPOSignupStartView.as_view(), name="spo-signup-start"),
+    path("api/auth/spo-signup/complete/", SPOSignupCompleteView.as_view(), name="spo-signup-complete"),
+
+    #SPO Login
+    path("api/auth/login/", LoginView.as_view(), name="login"),
+    path("api/auth/refresh/", RefreshView.as_view(), name="token-refresh"),
 ]

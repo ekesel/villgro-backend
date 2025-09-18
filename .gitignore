@@ -27,3 +27,4 @@ build
 /pgdata/
 *.coverage
 htmlcov/
+migrations/

@@ -3,9 +3,11 @@ from django.db import models
 from django.contrib.auth.models import (
     AbstractBaseUser, PermissionsMixin, BaseUserManager
 )
+from django.conf import settings
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
-
+import uuid
+from datetime import timedelta
 
 class UserManager(BaseUserManager):
     use_in_migrations = True
@@ -65,3 +67,24 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return f"{self.email} ({self.role})"
 
+class PasswordResetCode(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="reset_codes")
+    code = models.CharField(max_length=6)  # numeric string like "482913"
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    @classmethod
+    def issue_for(cls, user, lifetime_minutes=10):
+        import random
+        code = f"{random.randint(100000, 999999)}"  # 6-digit
+        return cls.objects.create(
+            user=user,
+            code=code,
+            expires_at=timezone.now() + timedelta(minutes=lifetime_minutes)
+        )
+
+    def is_valid(self, code):
+        return (
+            self.code == code and
+            timezone.now() <= self.expires_at
+        )

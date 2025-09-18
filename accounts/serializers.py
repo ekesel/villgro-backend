@@ -4,9 +4,11 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from datetime import datetime
 
-from organizations.models import Organization
-
 User = get_user_model()
+
+from organizations.models import Organization
+from accounts.models import PasswordResetCode
+from accounts.emails import send_password_reset_email
 
 class SPOSignupStartSerializer(serializers.Serializer):
     email = serializers.EmailField()
@@ -104,3 +106,63 @@ class LogoutSerializer(serializers.Serializer):
     default_error_messages = {
         "bad_token": "Token is invalid or expired."
     }
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        try:
+            self.user = User.objects.get(email__iexact=value)
+        except User.DoesNotExist:
+            self.user = None
+        return value
+
+    def save(self, **kwargs):
+        if self.user:
+            code_obj = PasswordResetCode.issue_for(self.user)
+            send_password_reset_email(self.user, code_obj)
+
+
+class VerifyCodeSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    code = serializers.CharField(max_length=6)
+
+    def validate(self, attrs):
+        try:
+            user = User.objects.get(email__iexact=attrs["email"])
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"email": "Invalid email."})
+
+        code_obj = PasswordResetCode.objects.filter(user=user).order_by("-created_at").first()
+        if not code_obj or not code_obj.is_valid(attrs["code"]):
+            raise serializers.ValidationError({"code": "Invalid or expired code."})
+
+        attrs["user"] = user
+        return attrs
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    code = serializers.CharField(max_length=6)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+    confirm_password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate(self, attrs):
+        if attrs["new_password"] != attrs["confirm_password"]:
+            raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+        return attrs
+
+    def save(self, **kwargs):
+        try:
+            user = User.objects.get(email__iexact=self.validated_data["email"])
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"email": "Invalid email."})
+
+        code_obj = PasswordResetCode.objects.filter(user=user).order_by("-created_at").first()
+        if not code_obj or not code_obj.is_valid(self.validated_data["code"]):
+            raise serializers.ValidationError({"code": "Invalid or expired code."})
+
+        user.set_password(self.validated_data["new_password"])
+        user.save()
+        code_obj.delete()  # invalidate code
+        return user

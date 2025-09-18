@@ -8,7 +8,8 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from accounts.serializers import SPOSignupStartSerializer, SPOProfileCompleteSerializer, EmailTokenObtainPairSerializer, LogoutSerializer
+from accounts.serializers import SPOSignupStartSerializer, SPOProfileCompleteSerializer, \
+    EmailTokenObtainPairSerializer, LogoutSerializer, ForgotPasswordSerializer, VerifyCodeSerializer, ResetPasswordSerializer
 
 class SPOSignupStartView(APIView):
     permission_classes = [AllowAny]
@@ -143,3 +144,31 @@ class LogoutView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({"message": "Logout successful. Token blacklisted."}, status=205)
+
+class ForgotPasswordView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = ForgotPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"message": "If the email exists, a reset code has been sent."})
+
+
+class VerifyCodeView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = VerifyCodeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response({"message": "Code verified."})
+
+
+class ResetPasswordView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = ResetPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"message": "Password reset successful."})

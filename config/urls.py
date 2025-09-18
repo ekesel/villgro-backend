@@ -21,6 +21,10 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from accounts.views import SPOSignupStartView, SPOSignupCompleteView, LoginView, \
     RefreshView, LogoutView, ForgotPasswordView, VerifyCodeView, ResetPasswordView
 
+from organizations.views import OnboardingProgressView, OnboardingAdvanceView, OnboardingStep2View, \
+    OnboardingStep3View, OnboardingFinishView, MetaOptionsView
+
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     
@@ -41,4 +45,12 @@ urlpatterns = [
     path("api/auth/password/forgot/", ForgotPasswordView.as_view(), name="password-forgot"),
     path("api/auth/password/verify-code/", VerifyCodeView.as_view(), name="password-verify-code"),
     path("api/auth/password/reset/", ResetPasswordView.as_view(), name="password-reset"),
+
+    #Organizations
+    path("api/onboarding", OnboardingProgressView.as_view(), name="onboarding-progress"),
+    path("api/onboarding/advance", OnboardingAdvanceView.as_view(), name="onboarding-advance"),
+    path("api/onboarding/step/2", OnboardingStep2View.as_view(), name="onboarding-step2"),
+    path("api/onboarding/step/3", OnboardingStep3View.as_view(), name="onboarding-step3"),
+    path("api/onboarding/finish", OnboardingFinishView.as_view(), name="onboarding-finish"),
+    path("api/meta/options", MetaOptionsView.as_view(), name="meta-options"),
 ]

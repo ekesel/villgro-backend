@@ -9,6 +9,7 @@ User = get_user_model()
 from organizations.models import Organization
 from accounts.models import PasswordResetCode
 from accounts.emails import send_password_reset_email
+from organizations.utils import get_or_create_progress
 
 class SPOSignupStartSerializer(serializers.Serializer):
     email = serializers.EmailField()
@@ -79,13 +80,18 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
         data = super().validate(attrs)
 
         user: User = self.user
+        prog = get_or_create_progress(user)
         # enrich response
         data["user"] = {
             "email": user.email,
             "first_name": user.first_name,
             "last_name": user.last_name,
-            "role": user.role,
-            "has_completed_profile": hasattr(user, "organization"),
+            "role": user.role
+        }
+        data["has_completed_profile"] = bool(prog.is_complete)
+        data["onboarding"] = {
+            "current_step": prog.current_step,
+            "is_complete": prog.is_complete,
         }
         return data
     

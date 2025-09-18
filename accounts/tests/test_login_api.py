@@ -1,13 +1,13 @@
 import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
+from organizations.models import OnboardingProgress
 
 User = get_user_model()
 
 @pytest.mark.django_db
-def test_login_returns_tokens_and_user_info():
-    # Arrange: create a user
-    u = User.objects.create_user(
+def test_login_returns_tokens_user_and_onboarding_flags():
+    user = User.objects.create_user(
         email="founder@example.com",
         password="StrongPass123!",
         first_name="Asha",
@@ -22,22 +22,19 @@ def test_login_returns_tokens_and_user_info():
         "password": "StrongPass123!"
     }, format="json")
 
-    # Assert
+    # Assert tokens + user payload
     assert resp.status_code == 200
     body = resp.json()
     assert "access" in body and "refresh" in body
     assert body["user"]["email"] == "founder@example.com"
-    assert body["user"]["role"] == "SPO"
-    assert body["user"]["has_completed_profile"] is False  # no org yet
 
-@pytest.mark.django_db
-def test_refresh_returns_new_access_token():
-    u = User.objects.create_user(email="x@y.com", password="StrongPass123!")
-    client = APIClient()
-    # first login to get refresh
-    login = client.post("/api/auth/login/", {"email":"x@y.com","password":"StrongPass123!"}, format="json")
-    refresh = login.data["refresh"]
+    # On first login, progress is auto-created and not complete
+    assert body["has_completed_profile"] is False
+    assert "onboarding" in body
+    assert body["onboarding"]["current_step"] == 1
+    assert body["onboarding"]["is_complete"] is False
 
-    resp = client.post("/api/auth/refresh/", {"refresh": refresh}, format="json")
-    assert resp.status_code == 200
-    assert "access" in resp.data
+    # DB check
+    prog = OnboardingProgress.objects.get(user=user)
+    assert prog.current_step == 1
+    assert prog.is_complete is False

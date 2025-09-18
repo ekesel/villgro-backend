@@ -10,6 +10,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 
 from accounts.serializers import SPOSignupStartSerializer, SPOProfileCompleteSerializer, \
     EmailTokenObtainPairSerializer, LogoutSerializer, ForgotPasswordSerializer, VerifyCodeSerializer, ResetPasswordSerializer
+from organizations.utils import get_or_create_progress
 
 class SPOSignupStartView(APIView):
     permission_classes = [AllowAny]
@@ -78,8 +79,21 @@ class SPOSignupCompleteView(APIView):
         ser = SPOProfileCompleteSerializer(data=request.data, context={"request": request})
         ser.is_valid(raise_exception=True)
         org = ser.save()
+        prog = get_or_create_progress(request.user)
+        if prog.current_step < 2:   # don’t move backward
+            prog.current_step = 2
+            prog.is_complete = False
+            prog.save(update_fields=["current_step", "is_complete", "updated_at"])
         return Response(
-            {"message": "Profile completed.", "organization": {"name": org.name, "registration_type": org.registration_type}},
+            {
+                "message": "Profile (step 1) saved.",
+                "organization": {"name": org.name, "registration_type": org.registration_type},
+                "has_completed_profile": bool(prog.is_complete),
+                "onboarding": {
+                    "current_step": prog.current_step,
+                    "is_complete": prog.is_complete,
+                },
+            },
             status=status.HTTP_201_CREATED
         )
     

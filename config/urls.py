@@ -18,7 +18,7 @@ from django.contrib import admin
 from django.urls import path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from accounts.views import SPOSignupStartView, SPOSignupCompleteView, LoginView, RefreshView
+from accounts.views import SPOSignupStartView, SPOSignupCompleteView, LoginView, RefreshView, LogoutView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -34,4 +34,5 @@ urlpatterns = [
     #SPO Login
     path("api/auth/login/", LoginView.as_view(), name="login"),
     path("api/auth/refresh/", RefreshView.as_view(), name="token-refresh"),
+    path("api/auth/logout/", LogoutView.as_view(), name="logout"),
 ]

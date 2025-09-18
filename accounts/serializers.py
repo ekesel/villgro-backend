@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from datetime import datetime
 
 from organizations.models import Organization
@@ -85,3 +86,21 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
             "has_completed_profile": hasattr(user, "organization"),
         }
         return data
+    
+class LogoutSerializer(serializers.Serializer):
+    refresh = serializers.CharField()
+
+    def validate(self, attrs):
+        self.token = attrs["refresh"]
+        return attrs
+
+    def save(self, **kwargs):
+        try:
+            token = RefreshToken(self.token)
+            token.blacklist()  # mark as invalid
+        except TokenError:
+            self.fail("bad_token")
+
+    default_error_messages = {
+        "bad_token": "Token is invalid or expired."
+    }

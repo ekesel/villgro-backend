@@ -8,7 +8,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from accounts.serializers import SPOSignupStartSerializer, SPOProfileCompleteSerializer, EmailTokenObtainPairSerializer
+from accounts.serializers import SPOSignupStartSerializer, SPOProfileCompleteSerializer, EmailTokenObtainPairSerializer, LogoutSerializer
 
 class SPOSignupStartView(APIView):
     permission_classes = [AllowAny]
@@ -118,3 +118,28 @@ class LoginView(TokenObtainPairView):
 
 class RefreshView(TokenRefreshView):
     permission_classes = [AllowAny]
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=LogoutSerializer,
+        responses={205: dict},
+        examples=[
+            OpenApiExample(
+                "Logout payload",
+                value={"refresh": "<jwt_refresh_token>"},
+                request_only=True
+            ),
+            OpenApiExample(
+                "Logout success response",
+                value={"message": "Logout successful. Token blacklisted."},
+                response_only=True
+            ),
+        ],
+    )
+    def post(self, request):
+        serializer = LogoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"message": "Logout successful. Token blacklisted."}, status=205)

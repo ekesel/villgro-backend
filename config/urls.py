@@ -24,6 +24,12 @@ from accounts.views import SPOSignupStartView, SPOSignupCompleteView, LoginView,
 from organizations.views import OnboardingProgressView, OnboardingAdvanceView, OnboardingStep2View, \
     OnboardingStep3View, OnboardingFinishView, MetaOptionsView
 
+from assessments.views import (
+    StartAssessmentView, CurrentAssessmentView, SectionsView,
+    QuestionsView, SaveAnswersView, SubmitAssessmentView,
+    ResultsView, HistoryView,
+)
+
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -57,4 +63,14 @@ urlpatterns = [
     path("api/onboarding/step/3", OnboardingStep3View.as_view(), name="onboarding-step3"),
     path("api/onboarding/finish", OnboardingFinishView.as_view(), name="onboarding-finish"),
     path("api/meta/options", MetaOptionsView.as_view(), name="meta-options"),
+
+    #assessments
+    path("api/assessments/start", StartAssessmentView.as_view(), name="assessment-start"),
+    path("api/assessments/current", CurrentAssessmentView.as_view(), name="assessment-current"),
+    path("api/assessments/<int:pk>/sections", SectionsView.as_view(), name="assessment-sections"),
+    path("api/assessments/<int:pk>/questions", QuestionsView.as_view(), name="assessment-questions"),
+    path("api/assessments/<int:pk>/answers", SaveAnswersView.as_view(), name="assessment-save-answers"),
+    path("api/assessments/<int:pk>/submit", SubmitAssessmentView.as_view(), name="assessment-submit"),
+    path("api/assessments/<int:pk>/results", ResultsView.as_view(), name="assessment-results"),
+    path("api/assessments/history", HistoryView.as_view(), name="assessment-history"),
 ]

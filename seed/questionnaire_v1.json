@@ -1,0 +1,96 @@
+{
+  "sections": [
+    {
+      "code": "IMPACT",
+      "title": "Impact",
+      "order": 1,
+      "questions": [
+        {
+          "code": "IMP_Q1",
+          "text": "Does your solution create measurable social impact?",
+          "type": "SINGLE_CHOICE",
+          "required": true,
+          "order": 1,
+          "options": [
+            {"label": "Yes", "value": "YES", "points": 10},
+            {"label": "No",  "value": "NO",  "points": 0}
+          ]
+        },
+        {
+          "code": "IMP_Q2",
+          "text": "Rate your impact across the following dimensions",
+          "type": "MULTI_SLIDER",
+          "required": true,
+          "order": 2,
+          "dimensions": [
+            {"code": "reach", "label": "Reach", "min": 0, "max": 10, "points_per_unit": 1, "weight": 1.0},
+            {"code": "depth", "label": "Depth", "min": 0, "max": 10, "points_per_unit": 1, "weight": 1.5}
+          ],
+          "conditions": [
+            {"q": "IMP_Q1", "op": "eq", "val": "YES"}
+          ]
+        }
+      ]
+    },
+    {
+      "code": "RISK",
+      "title": "Risk",
+      "order": 2,
+      "questions": [
+        {
+          "code": "RISK_Q1",
+          "text": "Which risks apply to you?",
+          "type": "MULTI_CHOICE",
+          "options": [
+            {"label": "Operational", "value": "OP", "points": -3},
+            {"label": "Financial",  "value": "FIN","points": -4},
+            {"label": "Market",     "value": "MKT","points": -2}
+          ]
+        }
+      ]
+    },
+    {
+      "code": "RETURN",
+      "title": "Return",
+      "order": 3,
+      "questions": [
+        {
+          "code": "RET_Q1",
+          "text": "Projected revenue growth (0-10)",
+          "type": "SLIDER",
+          "max_score": 10
+        }
+      ]
+    },
+    {
+      "code": "SECTOR_MATURITY",
+      "title": "Sector Maturity",
+      "order": 4,
+      "questions": [
+        {
+          "code": "SEC_Q1",
+          "text": "Rate sector maturity (1-5)",
+          "type": "RATING"
+        }
+      ]
+    },
+    {
+      "code": "FEEDBACK",
+      "title": "Feedback",
+      "order": 5,
+      "questions": [
+        {
+          "code": "FB_Q1",
+          "text": "How was your experience?",
+          "type": "SINGLE_CHOICE",
+          "required": false,
+          "options": [
+            {"label": "Great", "value": "GREAT"},
+            {"label": "Good",  "value": "GOOD"},
+            {"label": "Okay",  "value": "OKAY"}
+          ]
+        }
+      ]
+    }
+  ]
+}

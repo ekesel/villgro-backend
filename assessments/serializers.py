@@ -39,18 +39,23 @@ class QuestionSerializer(serializers.ModelSerializer):
     min = serializers.SerializerMethodField()
     max = serializers.SerializerMethodField()
     step = serializers.SerializerMethodField()
+    is_control = serializers.SerializerMethodField()
 
     class Meta:
         model = Question
         fields = [
             "code", "text", "help_text", "type", "required", "weight",
-            "options", "dimensions", "min", "max", "step", "answer",
+            "options", "dimensions", "min", "max", "step", "answer", "is_control",
         ]
 
     def get_options(self, obj):
         if obj.type in ["SINGLE_CHOICE", "MULTI_CHOICE"]:
             return [{"label": o.label, "value": o.value, "points": str(o.points)} for o in obj.options.all()]
         return None
+    
+    def get_is_control(self, obj):
+        control_set = self.context.get("control_set", set())
+        return obj.code in control_set
 
     def get_dimensions(self, obj):
         if obj.type == "MULTI_SLIDER":

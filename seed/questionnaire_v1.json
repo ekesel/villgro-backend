@@ -91,6 +91,31 @@
           ]
         }
       ]
+    },
+    {
+      "code": "FEEDBACK",
+      "title": "Feedback",
+      "order": 99,
+      "questions": [
+        {
+          "code": "FB_Q1",
+          "text": "Why are you exiting the assessment?",
+          "type": "SINGLE_CHOICE",
+          "required": false,
+          "options": [
+            {"label": "Too long", "value": "TOO_LONG", "points": 0},
+            {"label": "Not relevant", "value": "NOT_RELEVANT", "points": 0},
+            {"label": "Will continue later", "value": "LATER", "points": 0}
+          ]
+        },
+        {
+          "code": "FB_Q2",
+          "text": "Rate your experience so far",
+          "type": "RATING",
+          "required": false,
+          "max_score": 5
+        }
+      ]
     }
   ]
 }

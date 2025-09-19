@@ -246,3 +246,123 @@ def test_slider_question_has_min_max(api_client):
     data = resp.json()
     q = next(q for q in data["questions"] if q["type"] == "SLIDER")
     assert "min" in q and "max" in q and "step" in q
+
+def test_optional_feedback_section(api_client):
+    client, user = api_client
+    assessment = Assessment.objects.create(organization=user.organization)
+
+    # Fetch feedback questions
+    url = reverse("assessment-questions", args=[assessment.id])
+    resp = client.get(url, {"section": "FEEDBACK"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["section"] == "FEEDBACK"
+    assert any(q["code"] == "FB_Q1" for q in data["questions"])
+
+    # Save feedback answers
+    ans_url = reverse("assessment-save-answers", args=[assessment.id])
+    payload = {
+        "answers": [
+            {"question": "FB_Q1", "data": {"value": "LATER"}},
+            {"question": "FB_Q2", "data": {"value": 4}}
+        ]
+    }
+    resp2 = client.patch(ans_url, payload, format="json")
+    assert resp2.status_code == 200
+
+    # Answers stored in DB
+    assert Answer.objects.filter(assessment=assessment, question__code="FB_Q1").exists()
+    assert Answer.objects.filter(assessment=assessment, question__code="FB_Q2").exists()
+
+    # User can still resume draft normally
+    current_url = reverse("assessment-current")
+    resp3 = client.get(current_url)
+    assert resp3.status_code == 200
+    assert resp3.json()["status"] == "DRAFT"
+
+def test_feedback_can_be_skipped(api_client):
+    client, user = api_client
+    assessment = Assessment.objects.create(organization=user.organization)
+
+    # Don’t answer feedback at all → just resume
+    url = reverse("assessment-current")
+    resp = client.get(url)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "DRAFT"
+
+    # Submit without feedback
+    # (simulate answering minimum required from other sections)
+    ans_url = reverse("assessment-save-answers", args=[assessment.id])
+    payload = {
+        "answers": [
+            {"question": "IMP_Q1", "data": {"value": "YES"}},
+            {"question": "IMP_Q2", "data": {"values": {"reach": 5, "depth": 7}}},
+            {"question": "RISK_Q1", "data": {"values": ["OP"]}},
+            {"question": "RET_Q1", "data": {"value": 4}},
+            {"question": "SEC_Q1", "data": {"value": 3}}
+        ]
+    }
+    client.patch(ans_url, payload, format="json")
+
+    submit_url = reverse("assessment-submit", args=[assessment.id])
+    resp2 = client.post(submit_url)
+    assert resp2.status_code == 200
+    data = resp2.json()
+    assert data["status"] == "SUBMITTED"
+
+    # Feedback section is optional → submit works even if unanswered
+    assert "FEEDBACK" not in data["scores"]["sections"]
+
+
+def test_progress_percent_and_resume(api_client):
+    client, user = api_client
+    assessment = Assessment.objects.create(organization=user.organization)
+
+    # Start percent should be 0
+    url = reverse("assessment-sections", args=[assessment.id])
+    resp = client.get(url)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "percent" in data["progress"]
+    assert data["progress"]["percent"] == 0
+    assert data["resume"]["last_section"] is None
+
+    # Save an answer in IMPACT section
+    ans_url = reverse("assessment-save-answers", args=[assessment.id])
+    payload = {"answers": [{"question": "IMP_Q1", "data": {"value": "YES"}}]}
+    resp2 = client.patch(ans_url + "?section=IMPACT", payload, format="json")
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+    assert "percent" in data2["progress"]
+    assert data2["progress"]["percent"] >= 1
+    assert data2["resume"]["last_section"] == "IMPACT"
+
+    # Save in RISK section, should update last_section
+    payload2 = {"answers": [{"question": "RISK_Q1", "data": {"values": ["OP"]}}]}
+    resp3 = client.patch(ans_url + "?section=RISK", payload2, format="json")
+    assert resp3.status_code == 200
+    data3 = resp3.json()
+    assert data3["resume"]["last_section"] == "RISK"
+
+    # Fill all required answers (simulate full completion)
+    payload_full = {
+        "answers": [
+            {"question": "IMP_Q1", "data": {"value": "YES"}},
+            {"question": "IMP_Q2", "data": {"values": {"reach": 5, "depth": 7}}},
+            {"question": "RISK_Q1", "data": {"values": ["OP"]}},
+            {"question": "RET_Q1", "data": {"value": 4}},
+            {"question": "SEC_Q1", "data": {"value": 3}}
+        ]
+    }
+    client.patch(ans_url + "?section=IMPACT", payload_full, format="json")
+
+    # Submit — should succeed and change status to SUBMITTED
+    submit_url = reverse("assessment-submit", args=[assessment.id])
+    resp_submit = client.post(submit_url)
+    assert resp_submit.status_code == 200
+    assert resp_submit.json()["status"] == "SUBMITTED"
+
+    # Once submitted, further saves should be blocked
+    resp4 = client.patch(ans_url, payload, format="json")
+    assert resp4.status_code in [400, 404]
+    assert "cannot be modified" in resp4.json()["detail"]

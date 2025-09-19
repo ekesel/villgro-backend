@@ -16,6 +16,7 @@ from assessments.serializers import (
 )
 from questionnaires.models import Section, Question
 from assessments.services import build_answers_map, visible_questions_for_section, compute_progress
+from assessments.services import get_control_qcodes
 
 ASSESSMENT_COOLDOWN_DAYS = int(getattr(settings, "ASSESSMENT_COOLDOWN_DAYS", 180))
 
@@ -31,6 +32,26 @@ class StartAssessmentView(APIView):
             200: AssessmentSerializer,
             403: OpenApiResponse(description="Cooldown period active"),
         },
+        examples=[
+            OpenApiExample(
+                "Draft Assessment",
+                value={
+                    "id": 42,
+                    "status": "DRAFT",
+                    "started_at": "2025-09-19T12:00:00Z",
+                    "submitted_at": None,
+                    "cooldown_until": None,
+                    "progress": {
+                        "answered": 2,
+                        "required": 10,
+                        "percent": 20,
+                        "by_section": {"IMPACT": {"answered": 1, "required": 3}},
+                    },
+                    "resume": {"last_section": "IMPACT"},
+                    "scores": {}
+                },
+            )
+        ],
     )
     def post(self, request):
         org = request.user.organization
@@ -53,18 +74,48 @@ class CurrentAssessmentView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        summary="Get current draft assessment",
+        summary="Get current draft assessment (with progress and resume state)",
         responses={
             200: AssessmentSerializer,
             404: OpenApiResponse(description="No active assessment"),
         },
+        examples=[
+            OpenApiExample(
+                "Current Draft",
+                value={
+                    "id": 42,
+                    "status": "DRAFT",
+                    "progress": {
+                        "answered": 4,
+                        "required": 12,
+                        "percent": 33,
+                        "by_section": {
+                            "IMPACT": {"answered": 2, "required": 3},
+                            "RISK": {"answered": 1, "required": 4},
+                            "RETURN": {"answered": 1, "required": 3}
+                        }
+                    },
+                    "resume": {"last_section": "RISK"}
+                },
+                response_only=True,
+            )
+        ],
     )
     def get(self, request):
         org = request.user.organization
         draft = org.assessments.filter(status="DRAFT").first()
         if not draft:
             return Response({"detail": "No active assessment"}, status=404)
-        return Response(AssessmentSerializer(draft).data)
+        progress = compute_progress(draft)
+        data = AssessmentSerializer(draft).data
+        data["progress"] = {
+            "answered": progress["answered"],
+            "required": progress["required"],
+            "percent": progress["percent"],
+            "by_section": progress["by_section"],
+        }
+        data["resume"] = {"last_section": progress.get("last_section")}
+        return Response(data)
 
 
 class SectionsView(APIView):
@@ -72,7 +123,29 @@ class SectionsView(APIView):
 
     @extend_schema(
         summary="List sections with progress",
-        responses={200: OpenApiResponse(description="List of sections with progress")},
+        responses={200: OpenApiResponse(description="List of sections with progress, percent, and last_section")},
+        examples=[
+            OpenApiExample(
+                "Sections Response",
+                value={
+                    "sections": [
+                        {"code": "IMPACT", "title": "Impact", "progress": {"answered": 1, "required": 3}},
+                        {"code": "RISK", "title": "Risk", "progress": {"answered": 0, "required": 4}}
+                    ],
+                    "progress": {
+                        "answered": 1,
+                        "required": 7,
+                        "percent": 14,
+                        "by_section": {
+                            "IMPACT": {"answered": 1, "required": 3},
+                            "RISK": {"answered": 0, "required": 4}
+                        }
+                    },
+                    "resume": {"last_section": "IMPACT"}
+                },
+                response_only=True,
+            )
+        ],
     )
     def get(self, request, pk):
         assessment = get_object_or_404(Assessment, pk=pk, organization=request.user.organization)
@@ -82,9 +155,17 @@ class SectionsView(APIView):
             many=True,
             context={"progress_by_section": progress["by_section"]},
         )
-        return Response(
-            {"sections": ser.data, "progress": {"answered": progress["answered"], "required": progress["required"]}}
-        )
+        payload = {
+            "sections": ser.data,
+            "progress": {
+                "answered": progress["answered"],
+                "required": progress["required"],
+                "percent": progress["percent"],
+                "by_section": progress["by_section"],
+            },
+            "resume": {"last_section": progress.get("last_section")},
+        }
+        return Response(payload)
 
 
 class QuestionsView(APIView):
@@ -101,7 +182,8 @@ class QuestionsView(APIView):
         sec = get_object_or_404(Section, code=section_code)
         visible = visible_questions_for_section(assessment, sec)
         answers_map = build_answers_map(assessment)
-        ser = QuestionSerializer(visible, many=True, context={"answers_map": answers_map})
+        control_set = get_control_qcodes()
+        ser = QuestionSerializer(visible, many=True, context={"answers_map": answers_map, "control_set": control_set })
         return Response({"section": sec.code, "questions": ser.data})
 
 
@@ -110,13 +192,43 @@ class SaveAnswersView(APIView):
 
     @extend_schema(
         summary="Save answers (bulk upsert)",
+        parameters=[
+            OpenApiParameter(
+                name="section",
+                description="Section code you are editing; used to update resume state",
+                required=False,
+                type=str,
+            )
+        ],
         request=AnswerUpsertSerializer(many=True),
-        responses={200: OpenApiResponse(description="Updated progress counters")},
+        responses={200: OpenApiResponse(description="Updated progress counters with percent and resume")},
+        examples=[
+            OpenApiExample(
+                "Save Answers Response",
+                value={
+                    "progress": {
+                        "answered": 4,
+                        "required": 12,
+                        "percent": 33,
+                        "by_section": {
+                            "IMPACT": {"answered": 2, "required": 3},
+                            "RISK": {"answered": 1, "required": 4},
+                            "RETURN": {"answered": 1, "required": 3}
+                        }
+                    },
+                    "resume": {"last_section": "RISK"}
+                },
+                response_only=True,
+            )
+        ],
     )
     def patch(self, request, pk):
         assessment = get_object_or_404(
-            Assessment, pk=pk, organization=request.user.organization, status="DRAFT"
+            Assessment, pk=pk, organization=request.user.organization
         )
+        if assessment.status != "DRAFT":
+            return Response({"detail": "Assessment is submitted and cannot be modified."},
+                            status=status.HTTP_400_BAD_REQUEST)
         serializer = AnswerUpsertSerializer(data=request.data.get("answers", []), many=True)
         serializer.is_valid(raise_exception=True)
 
@@ -132,10 +244,23 @@ class SaveAnswersView(APIView):
                 )
             Answer.objects.update_or_create(assessment=assessment, question=q, defaults={"data": data})
 
-        assessment.progress = compute_progress(assessment)
-        assessment.save(update_fields=["progress"])
-        return Response({"progress": assessment.progress})
+        section_code = request.query_params.get("section")
+        if not section_code and serializer.validated_data:
+            first_q = Question.objects.filter(code=serializer.validated_data[0]["question"]).select_related("section").first()
+            if first_q:
+                section_code = first_q.section.code
 
+        # recompute progress (+ percent)
+        progress = compute_progress(assessment)
+        if section_code:
+            progress["last_section"] = section_code
+
+        assessment.progress = progress
+        assessment.save(update_fields=["progress"])
+        return Response({
+            "progress": assessment.progress,
+            "resume": {"last_section": progress.get("last_section")}
+        })
 
 class SubmitAssessmentView(APIView):
     permission_classes = [IsAuthenticated]

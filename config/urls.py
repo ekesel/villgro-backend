@@ -27,7 +27,7 @@ from organizations.views import OnboardingProgressView, OnboardingAdvanceView, O
 from assessments.views import (
     StartAssessmentView, CurrentAssessmentView, SectionsView,
     QuestionsView, SaveAnswersView, SubmitAssessmentView,
-    ResultsView, HistoryView,
+    ResultsView, HistoryView, ResultsSummaryView, SectionResultsView, ReportPDFView
 )
 
 
@@ -73,4 +73,7 @@ urlpatterns = [
     path("api/assessments/<int:pk>/submit", SubmitAssessmentView.as_view(), name="assessment-submit"),
     path("api/assessments/<int:pk>/results", ResultsView.as_view(), name="assessment-results"),
     path("api/assessments/history", HistoryView.as_view(), name="assessment-history"),
+    path("api/assessments/<int:pk>/results/summary", ResultsSummaryView.as_view(), name="assessment-results-summary"),
+    path("api/assessments/<int:pk>/results/section", SectionResultsView.as_view(), name="assessment-results-section"),
+    path("api/assessments/<int:pk>/report.pdf", ReportPDFView.as_view(), name="assessment-report-pdf"),
 ]

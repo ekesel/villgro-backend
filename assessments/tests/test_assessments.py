@@ -366,3 +366,30 @@ def test_progress_percent_and_resume(api_client):
     resp4 = client.patch(ans_url, payload, format="json")
     assert resp4.status_code in [400, 404]
     assert "cannot be modified" in resp4.json()["detail"]
+
+def test_results_summary_endpoint(api_client):
+    client, user = api_client
+    a = Assessment.objects.create(
+        organization=user.organization,
+        status="SUBMITTED",
+        scores={"sections": {"IMPACT": 7.0, "RISK": 5.5}, "overall": 6.25}
+    )
+    url = reverse("assessment-results-summary", args=[a.id])
+    r = client.get(url)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["overall"] == 6.25
+    assert any(s["code"] == "IMPACT" for s in data["sections"])
+
+def test_pdf_report_endpoint(api_client):
+    client, user = api_client
+    a = Assessment.objects.create(
+        organization=user.organization,
+        status="SUBMITTED",
+        scores={"sections": {"IMPACT": 7.0}, "overall": 7.0}
+    )
+    url = reverse("assessment-report-pdf", args=[a.id])
+    r = client.get(url)
+    assert r.status_code == 200
+    # Accept either PDF or HTML fallback
+    assert r["Content-Type"] in ["application/pdf", "text/html"]

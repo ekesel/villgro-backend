@@ -3,10 +3,13 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter, OpenApiExample
 from rest_framework import status
+from weasyprint import HTML
+from django.template.loader import render_to_string
+from django.http import HttpResponse
 from django.utils import timezone
 from django.conf import settings
 from django.shortcuts import get_object_or_404
-
+from assessments.services import compute_scores
 from assessments.models import Assessment, Answer
 from assessments.serializers import (
     AssessmentSerializer,
@@ -321,7 +324,7 @@ class SubmitAssessmentView(APIView):
                 total += avg
                 count += 1
         scores["overall"] = round(total / count, 2) if count else 0
-
+        scores, _breakdown = compute_scores(assessment)
         assessment.status = "SUBMITTED"
         assessment.submitted_at = timezone.now()
         assessment.cooldown_until = timezone.now() + timezone.timedelta(days=ASSESSMENT_COOLDOWN_DAYS)
@@ -349,3 +352,74 @@ class HistoryView(APIView):
         org = request.user.organization
         assessments = org.assessments.filter(status="SUBMITTED")
         return Response(AssessmentSerializer(assessments, many=True).data)
+    
+class ResultsSummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Results summary (per section + overall)",
+        responses={200: OpenApiResponse(description="Section scores and overall")},
+        examples=[OpenApiExample(
+            "Summary",
+            value={
+                "id": 42,
+                "overall": 6.38,
+                "sections": [
+                    {"code": "IMPACT", "score": 7.5},
+                    {"code": "RISK", "score": 5.0},
+                    {"code": "RETURN", "score": 6.2},
+                    {"code": "SECTOR_MATURITY", "score": 6.8}
+                ]
+            },
+            response_only=True
+        )]
+    )
+    def get(self, request, pk):
+        assessment = get_object_or_404(
+            Assessment, pk=pk, organization=request.user.organization, status="SUBMITTED"
+        )
+        s = assessment.scores or {}
+        sections = [{"code": c, "score": s["sections"][c]} for c in sorted(s.get("sections", {}).keys())]
+        return Response({"id": assessment.id, "overall": s.get("overall", 0), "sections": sections})
+    
+class SectionResultsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Detailed section results (question contributions)",
+        parameters=[OpenApiParameter(name="section", required=True, type=str)],
+        responses={200: OpenApiResponse(description="Per-question breakdown for a section")},
+    )
+    def get(self, request, pk):
+        section_code = request.query_params.get("section")
+        assessment = get_object_or_404(
+            Assessment, pk=pk, organization=request.user.organization, status="SUBMITTED"
+        )
+        from assessments.services import compute_scores
+        _scores, breakdown = compute_scores(assessment)
+        data = breakdown.get(section_code, [])
+        return Response({"id": assessment.id, "section": section_code, "questions": data})
+
+class ReportPDFView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Download PDF report of submitted assessment",
+        responses={200: OpenApiResponse(description="PDF binary")},
+    )
+    def get(self, request, pk):
+        assessment = get_object_or_404(
+            Assessment, pk=pk, organization=request.user.organization, status="SUBMITTED"
+        )
+
+        html_str = render_to_string("assessments/report.html", {
+            "assessment": assessment,
+            "scores": assessment.scores,
+            "org": assessment.organization,
+        })
+
+        pdf_bytes = HTML(string=html_str).write_pdf()
+
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="assessment-{assessment.id}.pdf"'
+        return response

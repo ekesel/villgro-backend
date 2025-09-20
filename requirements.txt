@@ -3,6 +3,7 @@ Django>=5.0
 psycopg[binary]
 djangorestframework
 djangorestframework-simplejwt
+weasyprint
 
 # API Docs
 drf-spectacular

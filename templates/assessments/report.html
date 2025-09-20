@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Assessment Report</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        h1 { color: #2c3e50; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        .overall { font-size: 1.2em; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Assessment Report – {{ org.name }}</h1>
+    <p>Date: {{ assessment.submitted_at|date:"Y-m-d H:i" }}</p>
+
+    <h2>Section Scores</h2>
+    <table>
+        <tr><th>Section</th><th>Score</th></tr>
+        {% for sec, score in scores.sections.items %}
+        <tr>
+            <td>{{ sec }}</td>
+            <td>{{ score }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <p class="overall"><strong>Overall Score:</strong> {{ scores.overall }}</p>
+</body>
+</html>

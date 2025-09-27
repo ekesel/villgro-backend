@@ -4,6 +4,7 @@ psycopg[binary]
 djangorestframework
 djangorestframework-simplejwt
 weasyprint
+django-cors-headers
 
 # API Docs
 drf-spectacular

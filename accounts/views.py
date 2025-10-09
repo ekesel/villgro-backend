@@ -57,46 +57,66 @@ class SPOSignupCompleteView(APIView):
 
     @extend_schema(
         request=SPOProfileCompleteSerializer,
-        responses={201: dict},
+        responses={200: dict, 201: dict},
         examples=[
             OpenApiExample(
-                "Complete profile payload",
+                "Create payload (no org yet)",
                 value={
-                    "org_name":"GreenLeaf Labs Pvt Ltd",
-                    "registration_type":"PRIVATE_LTD",
-                    "date_of_incorporation":"2021-06-01",
-                    "gst_number":"27ABCDE1234F1Z5",
-                    "cin_number":"U12345MH2021PTC000000"
+                    "org_name": "GreenLeaf Labs Pvt Ltd",
+                    "registration_type": "PRIVATE_LLD",  # example; use your actual choice key
+                    "date_of_incorporation": "2021-06-01",
+                    "gst_number": "27ABCDE1234F1Z5",
+                    "cin_number": "U12345MH2021PTC000000",
                 },
-                request_only=True
+                request_only=True,
             ),
             OpenApiExample(
-                "Complete profile response",
-                value={"message":"Profile completed.","organization":{"name":"GreenLeaf Labs Pvt Ltd","registration_type":"PRIVATE_LTD"}},
-                response_only=True
+                "Update payload (org exists) — partial allowed",
+                value={
+                    "gst_number": "27ABCDE1234F1Z5",
+                },
+                request_only=True,
             ),
         ],
     )
     def post(self, request):
-        ser = SPOProfileCompleteSerializer(data=request.data, context={"request": request})
-        ser.is_valid(raise_exception=True)
-        org = ser.save()
-        prog = get_or_create_progress(request.user)
-        if prog.current_step < 2:   # don’t move backward
+        user = request.user
+        instance = getattr(user, "organization", None)
+
+        # partial=True when updating existing org (accepts partial updates on POST)
+        serializer = SPOProfileCompleteSerializer(
+            instance=instance,
+            data=request.data,
+            context={"request": request},
+            partial=instance is not None,
+        )
+        serializer.is_valid(raise_exception=True)
+        org = serializer.save()
+
+        # progress step handling (don’t move backward)
+        prog = get_or_create_progress(user)
+        if prog.current_step < 2:
             prog.current_step = 2
             prog.is_complete = False
             prog.save(update_fields=["current_step", "is_complete", "updated_at"])
+
+        status_code = status.HTTP_200_OK if instance else status.HTTP_201_CREATED
+        message = "Profile updated successfully." if instance else "Profile (step 1) saved."
+
         return Response(
             {
-                "message": "Profile (step 1) saved.",
-                "organization": {"name": org.name, "registration_type": org.registration_type},
+                "message": message,
+                "organization": {
+                    "name": org.name,
+                    "registration_type": org.registration_type,
+                },
                 "has_completed_profile": bool(prog.is_complete),
                 "onboarding": {
                     "current_step": prog.current_step,
                     "is_complete": prog.is_complete,
                 },
             },
-            status=status.HTTP_201_CREATED
+            status=status_code,
         )
     
 class LoginView(TokenObtainPairView):

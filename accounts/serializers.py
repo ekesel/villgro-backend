@@ -43,28 +43,56 @@ class SPOSignupStartSerializer(serializers.Serializer):
         return user
     
 class SPOProfileCompleteSerializer(serializers.Serializer):
-    org_name = serializers.CharField()
-    registration_type = serializers.ChoiceField(choices=Organization.RegistrationType.choices)
+    org_name = serializers.CharField(required=False)
+    registration_type = serializers.ChoiceField(
+        choices=Organization.RegistrationType.choices, required=False
+    )
     date_of_incorporation = serializers.DateField(required=False, allow_null=True)
     gst_number = serializers.CharField(required=False, allow_blank=True)
     cin_number = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, attrs):
         user = self.context["request"].user
-        if hasattr(user, "organization"):
-            raise serializers.ValidationError({"organization": "Profile already completed for this user."})
+        instance = getattr(user, "organization", None)
+
+        # If creating (no org yet), enforce required fields
+        if instance is None:
+            missing = []
+            for f in ("org_name", "registration_type"):
+                v = attrs.get(f, None)
+                if v in (None, ""):
+                    missing.append(f)
+            if missing:
+                raise serializers.ValidationError(
+                    {f: "This field is required when creating." for f in missing}
+                )
         return attrs
 
-    def create(self, data):
+    def create(self, validated_data):
         user = self.context["request"].user
         return Organization.objects.create(
-            name=data["org_name"],
-            registration_type=data["registration_type"],
-            date_of_incorporation=data.get("date_of_incorporation"),
-            gst_number=data.get("gst_number", ""),
-            cin_number=data.get("cin_number", ""),
+            name=validated_data["org_name"],
+            registration_type=validated_data["registration_type"],
+            date_of_incorporation=validated_data.get("date_of_incorporation"),
+            gst_number=validated_data.get("gst_number", ""),
+            cin_number=validated_data.get("cin_number", ""),
             created_by=user,
         )
+
+    def update(self, instance, validated_data):
+        # map input->model field names
+        field_map = {
+            "org_name": "name",
+            "registration_type": "registration_type",
+            "date_of_incorporation": "date_of_incorporation",
+            "gst_number": "gst_number",
+            "cin_number": "cin_number",
+        }
+        for in_field, model_field in field_map.items():
+            if in_field in validated_data:
+                setattr(instance, model_field, validated_data[in_field])
+        instance.save()
+        return instance
     
 class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
     """

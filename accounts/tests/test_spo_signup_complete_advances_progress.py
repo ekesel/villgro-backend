@@ -35,3 +35,15 @@ def test_signup_complete_creates_org_and_sets_step2():
     assert resp.data["has_completed_profile"] is False
     assert resp.data["onboarding"]["current_step"] == 2
     assert resp.data["onboarding"]["is_complete"] is False
+    resp_update = client.post(
+        "/api/auth/spo-signup/complete/",
+        {"cin_number": "U12345MH2021PTC111111"},
+        format="json",
+    )
+    assert resp_update.status_code == 200
+
+    org = Organization.objects.get(created_by=user)
+    assert org.cin_number == "U12345MH2021PTC111111"
+
+    prog.refresh_from_db()
+    assert prog.current_step == 2 and prog.is_complete is False

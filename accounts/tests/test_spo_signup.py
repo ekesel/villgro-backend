@@ -42,3 +42,10 @@ def test_spo_two_step_signup_flow():
     assert user.terms_accepted_at is not None
     assert hasattr(user, "organization")
     assert Organization.objects.filter(created_by=user, name="Eco Innovations").exists()
+    resp3 = client.post(
+        "/api/auth/spo-signup/complete/",
+        {"gst_number": "27ABCDE9999F1Z9"},
+        format="json",
+    )
+    assert resp3.status_code == 200
+    assert Organization.objects.get(created_by=user).gst_number == "27ABCDE9999F1Z9"

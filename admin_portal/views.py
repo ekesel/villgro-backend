@@ -1,0 +1,129 @@
+from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
+
+from admin_portal.permissions import IsAdminRole
+from admin_portal.serializers import SectionAdminSerializer, QuestionAdminSerializer
+from questionnaires.models import Section, Question, AnswerOption, BranchingCondition, QuestionDimension
+
+
+# ----- Sections
+@extend_schema(tags=["Admin • Questionnaire • Sections"])
+class SectionAdminViewSet(viewsets.ModelViewSet):
+    queryset = Section.objects.all().order_by("order")
+    serializer_class = SectionAdminSerializer
+    permission_classes = [IsAdminRole]
+
+    @extend_schema(
+        summary="Bulk reorder sections",
+        request={"type":"object","properties":{"orders":{"type":"array","items":{"type":"object","properties":{"id":{"type":"integer"},"order":{"type":"integer"}}}}}},
+        responses={200: OpenApiResponse(description="OK")},
+    )
+    @action(detail=False, methods=["post"], url_path="reorder")
+    def reorder(self, request):
+        items = request.data.get("orders", [])
+        for it in items:
+            Section.objects.filter(id=it["id"]).update(order=it["order"])
+        return Response({"updated": len(items)})
+
+
+# ----- Questions
+@extend_schema(tags=["Admin • Questionnaire • Questions"])
+class QuestionAdminViewSet(viewsets.ModelViewSet):
+    queryset = (
+        Question.objects.select_related("section")
+        .prefetch_related("options","dimensions","conditions")
+        .order_by("order")
+    )
+    serializer_class = QuestionAdminSerializer
+    permission_classes = [IsAdminRole]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ["section__code","type","required"]
+
+    @extend_schema(
+        summary="List questions by section code",
+        parameters=[OpenApiParameter(name="section", required=True, type=str)],
+        responses={200: QuestionAdminSerializer(many=True)},
+    )
+    @action(detail=False, methods=["get"], url_path="by-section")
+    def by_section(self, request):
+        sec = request.query_params.get("section")
+        if not sec: return Response({"detail":"section is required"}, status=400)
+        qs = self.get_queryset().filter(section__code=sec)
+        return Response(QuestionAdminSerializer(qs, many=True).data)
+
+    @extend_schema(
+        summary="Append a visibility condition (does not replace existing)",
+        request={"type":"object","properties":{"logic":{"type":"object"}}},
+        responses={200: QuestionAdminSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="add-condition")
+    def add_condition(self, request, pk=None):
+        q = self.get_object()
+        logic = request.data.get("logic")
+        if not logic: return Response({"detail":"logic is required"}, status=400)
+        # validate by running partial serializer with a single condition
+        ser = QuestionAdminSerializer(q, data={"conditions":[{"logic": logic}]}, partial=True)
+        ser.is_valid(raise_exception=True)
+        BranchingCondition.objects.create(question=q, logic=logic)
+        q.refresh_from_db()
+        return Response(QuestionAdminSerializer(q).data)
+
+    @extend_schema(
+        summary="Duplicate a question (deep copy children)",
+        request={"type":"object","properties":{"new_code":{"type":"string"}}},
+        responses={201: QuestionAdminSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="duplicate")
+    def duplicate(self, request, pk=None):
+        q = self.get_object()
+        new_code = request.data.get("new_code")
+        if not new_code:
+            return Response({"detail":"new_code is required"}, status=400)
+        if Question.objects.filter(code=new_code).exists():
+            return Response({"detail":"new_code already exists"}, status=400)
+
+        payload = QuestionAdminSerializer(q).data
+        payload["code"] = new_code
+        payload.pop("id", None)
+        for child_list in ("options","dimensions","conditions"):
+            for c in payload.get(child_list, []):
+                c.pop("id", None)
+
+        new_ser = QuestionAdminSerializer(data=payload)
+        new_ser.is_valid(raise_exception=True)
+        obj = new_ser.save()
+        return Response(QuestionAdminSerializer(obj).data, status=201)
+
+    @extend_schema(
+        summary="Bulk reorder questions",
+        request={"type":"object","properties":{"orders":{"type":"array","items":{"type":"object","properties":{"id":{"type":"integer"},"order":{"type":"integer"}}}}}},
+        responses={200: OpenApiResponse(description="OK")},
+    )
+    @action(detail=False, methods=["post"], url_path="reorder")
+    def reorder(self, request):
+        items = request.data.get("orders", [])
+        for it in items:
+            Question.objects.filter(id=it["id"]).update(order=it["order"])
+        return Response({"updated": len(items)})
+
+    @extend_schema(
+        summary="Reorder options for a choice question",
+        request={"type":"object","properties":{"orders":{"type":"array","items":{"type":"object","properties":{"id":{"type":"integer"},"order":{"type":"integer"}}}}}},
+        responses={200: OpenApiResponse(description="OK")},
+    )
+    @action(detail=True, methods=["post"], url_path="reorder-options")
+    def reorder_options(self, request, pk=None):
+        q = self.get_object()
+        if q.type not in ["SINGLE_CHOICE","MULTI_CHOICE"]:
+            return Response({"detail":"Only for choice questions"}, status=400)
+        # Add 'order' to AnswerOption model if you want persistent option order (else skip)
+        items = request.data.get("orders", [])
+        id_to_order = {it["id"]: it["order"] for it in items}
+        for opt in AnswerOption.objects.filter(question=q, id__in=id_to_order.keys()):
+            # if you add 'order' field in AnswerOption; if not, remove this feature
+            setattr(opt, "order", id_to_order[opt.id])
+            opt.save(update_fields=["order"])
+        return Response({"updated": len(items)})

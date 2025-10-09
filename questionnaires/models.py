@@ -43,6 +43,7 @@ class AnswerOption(models.Model):
     label = models.CharField(max_length=255)
     value = models.CharField(max_length=100)  # frontend key
     points = models.DecimalField(max_digits=6, decimal_places=2, default=0)
+    order = models.PositiveIntegerField(default=0)
 
     def __str__(self):
         return f"{self.question.code} -> {self.label}"

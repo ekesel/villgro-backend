@@ -31,6 +31,20 @@ from assessments.views import (
 )
 
 
+from admin_portal.views import SectionAdminViewSet, QuestionAdminViewSet
+from admin_portal.views_meta import (
+    QuestionTypesMeta,
+    SectionsMeta,
+    QuestionCodesMeta,
+    OptionValuesMeta,
+)
+from rest_framework.routers import DefaultRouter
+
+router = DefaultRouter()
+router.register(r"api/admin/sections", SectionAdminViewSet, basename="admin-sections")
+router.register(r"api/admin/questions", QuestionAdminViewSet, basename="admin-questions")
+
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     
@@ -76,4 +90,12 @@ urlpatterns = [
     path("api/assessments/<int:pk>/results/summary", ResultsSummaryView.as_view(), name="assessment-results-summary"),
     path("api/assessments/<int:pk>/results/section", SectionResultsView.as_view(), name="assessment-results-section"),
     path("api/assessments/<int:pk>/report.pdf", ReportPDFView.as_view(), name="assessment-report-pdf"),
+
+    #admin portal
+    path("api/admin/meta/question-types/", QuestionTypesMeta.as_view(), name="admin-meta-question-types"),
+    path("api/admin/meta/sections/", SectionsMeta.as_view(), name="admin-meta-sections"),
+    path("api/admin/meta/question-codes/", QuestionCodesMeta.as_view(), name="admin-meta-question-codes"),
+    path("api/admin/meta/option-values/", OptionValuesMeta.as_view(), name="admin-meta-option-values"),
 ]
+
+urlpatterns += router.urls

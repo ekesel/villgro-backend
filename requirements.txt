@@ -6,6 +6,7 @@ djangorestframework-simplejwt
 weasyprint
 django-cors-headers
 whitenoise
+django-filter
 
 # API Docs
 drf-spectacular

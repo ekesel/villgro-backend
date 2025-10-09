@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
+    "django_filters",
 
     # Local apps
     "accounts",
@@ -51,6 +52,7 @@ INSTALLED_APPS = [
     "banks",
     "questionnaires",
     "assessments",
+    "admin_portal",
 ]
 
 AUTH_USER_MODEL = "accounts.User"

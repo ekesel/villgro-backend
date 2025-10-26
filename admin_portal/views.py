@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
-
+from django.db.models import Max
 from admin_portal.permissions import IsAdminRole
 from admin_portal.serializers import SectionAdminSerializer, QuestionAdminSerializer
 from questionnaires.models import Section, Question, AnswerOption, BranchingCondition, QuestionDimension
@@ -41,6 +41,35 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminRole]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["section__code","type","required"]
+
+    def _save_with_auto_order(self, serializer):
+        """
+        Save serializer, ensuring 'order' is unique within section.
+        If missing or colliding, set order = (max_order_in_section + 1).
+        """
+        vd = serializer.validated_data
+        section = vd.get("section") or getattr(getattr(serializer.instance, "section", None), "pk", None)
+        if not section:
+            # let serializer validation complain if section is required
+            return serializer.save()
+
+        provided_order = vd.get("order", None)
+
+        # current max in this section
+        max_order = (
+            Question.objects.filter(section=section).aggregate(m=Max("order"))["m"] or 0
+        )
+
+        # collision or not provided -> append to end
+        if provided_order is None or Question.objects.filter(section=section, order=provided_order).exists():
+            return serializer.save(order=max_order + 1)
+
+        # no collision -> keep as-is
+        return serializer.save()
+
+    # --- create --------------------------------------------------------------
+    def perform_create(self, serializer):
+        self._save_with_auto_order(serializer)
 
     @extend_schema(
         summary="List questions by section code",

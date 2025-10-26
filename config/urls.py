@@ -38,11 +38,16 @@ from admin_portal.views_meta import (
     QuestionCodesMeta,
     OptionValuesMeta,
 )
+from admin_portal.views_bank import BankAdminViewSet
+from admin_portal.views_spos import SPOAdminViewSet
+
 from rest_framework.routers import DefaultRouter
 
 router = DefaultRouter()
 router.register(r"api/admin/sections", SectionAdminViewSet, basename="admin-sections")
 router.register(r"api/admin/questions", QuestionAdminViewSet, basename="admin-questions")
+router.register(r"api/admin/banks", BankAdminViewSet, basename="admin-banks")
+router.register(r"api/admin/spos", SPOAdminViewSet, basename="admin-spos")
 
 
 urlpatterns = [

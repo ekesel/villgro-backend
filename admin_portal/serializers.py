@@ -1,8 +1,13 @@
 from rest_framework import serializers
 from django.db import transaction
+from django.contrib.auth import get_user_model
 from questionnaires.models import (
     Section, Question, AnswerOption, QuestionDimension, BranchingCondition
 )
+from banks.models import Bank
+from organizations.models import Organization
+
+User = get_user_model()
 
 # -------- Sections
 class SectionAdminSerializer(serializers.ModelSerializer):
@@ -156,4 +161,95 @@ class QuestionAdminSerializer(serializers.ModelSerializer):
         if opts is not None: replace(instance.options, opts, AnswerOption)
         if dims is not None: replace(instance.dimensions, dims, QuestionDimension)
         if conds is not None: replace(instance.conditions, conds, BranchingCondition)
+        return instance
+    
+class BankAdminSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Bank
+        fields = [
+            "id", "name", "contact_person", "contact_email",
+            "contact_phone", "status", "notes",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+class AdminSPOOrgSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Organization
+        fields = [
+            "id", "name", "registration_type",
+            "date_of_incorporation", "gst_number", "cin_number",
+            "type_of_innovation", "geo_scope", "top_states",
+            "focus_sector", "org_stage", "impact_focus",
+            "annual_operating_budget", "use_of_questionnaire",
+            "received_philanthropy_before",
+        ]
+        read_only_fields = ["id"]
+
+class AdminSPOListSerializer(serializers.ModelSerializer):
+    organization = AdminSPOOrgSerializer(read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            "id", "email", "first_name", "last_name", "phone",
+            "is_active", "date_joined", "organization",
+        ]
+
+class AdminSPOCreateSerializer(serializers.Serializer):
+    # user fields
+    email = serializers.EmailField()
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name  = serializers.CharField(required=False, allow_blank=True)
+    phone      = serializers.CharField(required=False, allow_blank=True)
+    password   = serializers.CharField(write_only=True)
+
+    # org minimal
+    organization = serializers.DictField(child=serializers.JSONField(), write_only=True)
+
+    def validate(self, data):
+        org = data.get("organization") or {}
+        if "name" not in org or "registration_type" not in org:
+            raise serializers.ValidationError("organization.name and organization.registration_type are required")
+        return data
+
+    def create(self, validated):
+        org_payload = validated.pop("organization")
+        password = validated.pop("password")
+
+        user = User.objects.create_user(
+            role=User.Role.SPO, **validated
+        )
+        user.set_password(password)
+        user.save()
+
+        Organization.objects.create(
+            created_by=user,
+            name=org_payload["name"],
+            registration_type=org_payload["registration_type"],
+            date_of_incorporation=org_payload.get("date_of_incorporation"),
+            gst_number=org_payload.get("gst_number",""),
+            cin_number=org_payload.get("cin_number",""),
+        )
+        return user
+
+class AdminSPOUpdateSerializer(serializers.ModelSerializer):
+    # allow updating some org fields inline
+    organization = AdminSPOOrgSerializer(required=False)
+
+    class Meta:
+        model = User
+        fields = ["first_name", "last_name", "phone", "is_active", "organization"]
+
+    def update(self, instance, validated):
+        org_data = validated.pop("organization", None)
+        for k, v in validated.items():
+            setattr(instance, k, v)
+        instance.save()
+
+        if org_data:
+            org = instance.organization
+            for k, v in org_data.items():
+                setattr(org, k, v)
+            org.save()
         return instance

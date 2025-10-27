@@ -25,53 +25,47 @@ class AssessmentSerializer(serializers.ModelSerializer):
         model = Assessment
         fields = [
             "id", "status", "started_at", "submitted_at",
-            "cooldown_until", "progress", "scores",
-            "graph",  # 👈 new
+            "cooldown_until", "progress", "scores", "graph",
         ]
 
     def get_graph(self, obj: Assessment) -> dict:
         """
-            Returns a frontend-friendly payload to draw the 'Risk–Return–Impact' scatter point
-            with dual Y-axes (Impact left, Return right), all normalized to 0–100.
+        Normalized Risk–Return–Impact graph payload for frontend visualization.
+        Combines old normalization logic with the new frontend schema.
         """
         scores = obj.scores or {}
-        sections = (scores.get("sections") or {})
-        raw_risk   = sections.get("RISK")
+        sections = scores.get("sections") or {}
+
+        raw_risk = sections.get("RISK")
         raw_impact = sections.get("IMPACT")
         raw_return = sections.get("RETURN")
+        overall = scores.get("overall")
 
-        # normalize
+        # Preserve normalization logic
         r = GRAPH_RANGES
-        nx = _normalize(raw_risk,   r["RISK"]["min"],   r["RISK"]["max"])
-        ny = _normalize(raw_impact, r["IMPACT"]["min"], r["IMPACT"]["max"])
-        ny2 = _normalize(raw_return, r["RETURN"]["min"], r["RETURN"]["max"])
-        instrument = scores.get("recommended_instrument")
+        norm_risk = _normalize(raw_risk, r["RISK"]["min"], r["RISK"]["max"])
+        norm_impact = _normalize(raw_impact, r["IMPACT"]["min"], r["IMPACT"]["max"])
+        norm_return = _normalize(raw_return, r["RETURN"]["min"], r["RETURN"]["max"])
 
-        return {
-            "type": "risk-return-impact-scatter",
-            "axes": {
-                "x": {"label": "Risk",   "min": 0, "max": 100},
-                "y_left":  {"label": "Impact", "min": 0, "max": 100},
-                "y_right": {"label": "Return", "min": 0, "max": 100},
-            },
-            "point": {
-                "x": nx, 
-                "y_left": ny, 
-                "y_right": ny2,
-                "raw": {
-                    "risk": raw_risk,
-                    "impact": raw_impact,
-                    "return": raw_return,
-                },
-            },
-            "meta": {
-                "overall": scores.get("overall"),
-                "instrument": instrument,
-                "version": obj.version,
-                "ranges_used": r,
-            },
+        # Maintain existing section-level data, add normalized versions if needed
+        normalized_sections = {
+            "RISK": norm_risk,
+            "IMPACT": norm_impact,
+            "RETURN": norm_return,
+            **{k: v for k, v in sections.items() if k not in ["RISK", "IMPACT", "RETURN"]},
         }
 
+        return {
+            "scores": {
+                "overall": overall,
+                "sections": normalized_sections,
+            },
+            "plot": {
+                "x": "RISK",
+                "y": "IMPACT",
+                "z": "RETURN",
+            },
+        }
 
 class SectionSerializer(serializers.ModelSerializer):
     progress = serializers.SerializerMethodField()

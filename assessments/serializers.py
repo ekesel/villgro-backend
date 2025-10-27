@@ -107,9 +107,7 @@ class QuestionSerializer(serializers.ModelSerializer):
         ]
 
     def get_options(self, obj):
-        if obj.type in ["SINGLE_CHOICE", "MULTI_CHOICE", "NPS"]:
-            return [{"label": o.label, "value": o.value, "points": str(o.points)} for o in obj.options.all()]
-        return None
+        return [{"label": o.label, "value": o.value, "points": str(o.points)} for o in obj.options.all()]
     
     def get_is_control(self, obj):
         control_set = self.context.get("control_set", set())

@@ -7,6 +7,7 @@ from questionnaires.models import (
 from banks.models import Bank
 from organizations.models import Organization
 from django.db.models import Sum
+import time
 
 User = get_user_model()
 
@@ -77,7 +78,46 @@ class QuestionAdminSerializer(serializers.ModelSerializer):
             "options", "dimensions", "conditions", "is_active",
         ]
 
-    # Type-specific validations that match the runtime engine
+    # ---- helpers ----------------------------------------------------------
+    def _autogenerate_code(self, attrs):
+        """Generate a stable-ish code if not supplied."""
+        if attrs.get("code"):
+            return
+        sec = attrs.get("section") or getattr(getattr(self, "instance", None), "section", None)
+        sec_code = None
+        try:
+            # section may be a PK or object
+            sec_code = getattr(sec, "code", None) or str(sec)
+        except Exception:
+            sec_code = "Q"
+        # Use epoch seconds to avoid collisions during admin usage
+        attrs["code"] = f"{sec_code}_Q{int(time.time())}"
+
+    def _normalize_condition_logic(self, logic: dict) -> dict:
+        """
+        Accepts either canonical {"if":[{"==":[code,val]}], "then": true}
+        or simplified {"q": code, "op": "", "val": value}.
+        Defaults op to 'eq' when missing/blank.
+        """
+        if "if" in logic and "then" in logic:
+            return logic  # already canonical
+
+        q = logic.get("q")
+        op = (logic.get("op") or "").strip().lower() or "eq"
+        val = logic.get("val")
+
+        # For now we only map 'eq' → '=='. You can extend this if needed.
+        if op != "eq":
+            # You can raise an error or coerce unsupported ops as needed:
+            # raise serializers.ValidationError({"conditions": f"Unsupported op '{op}' (only 'eq' is supported)."})
+            op_symbol = "=="  # graceful fallback to 'eq'
+        else:
+            op_symbol = "=="
+
+        return {"if": [{op_symbol: [q, val]}], "then": True}
+
+    # ---- validation -------------------------------------------------------
+
     def validate(self, attrs):
         instance = getattr(self, "instance", None)
         q_type = attrs.get("type", getattr(instance, "type", None))
@@ -86,6 +126,10 @@ class QuestionAdminSerializer(serializers.ModelSerializer):
         options = self.initial_data.get("options", None)
         dimensions = self.initial_data.get("dimensions", None)
         conditions = self.initial_data.get("conditions", None)
+
+        # Autogenerate code if omitted
+        self._autogenerate_code(attrs)
+        code = attrs.get("code")
 
         # Code uniqueness
         if code:
@@ -126,56 +170,67 @@ class QuestionAdminSerializer(serializers.ModelSerializer):
                     if d.get("min_value") is None or d.get("max_value") is None:
                         raise serializers.ValidationError({"dimensions": "All dimensions need min/max."})
 
-        # RATING: optional – allow as-is (value checked at runtime)
-
-        # Validate branching conditions structure & references
+        # Normalize and lightly validate branching
         if conditions:
-            # map question code -> option values for validation
+            # Build map: question_code -> set(option_values) for value validation where possible
             opt_map = {q.code: set(q.options.values_list("value", flat=True))
                        for q in Question.objects.prefetch_related("options")}
-            # include pending code so you can add a condition that references itself in THEN true
-            if code: opt_map.setdefault(code, set())
+            # ensure current code present (even if new)
+            if code:
+                opt_map.setdefault(code, set())
 
+            normalized_conds = []
             for c in conditions:
                 logic = c.get("logic") or {}
-                if "if" not in logic or "then" not in logic:
-                    raise serializers.ValidationError({"conditions": "Each condition.logic must have 'if' and 'then'."})
+                logic = self._normalize_condition_logic(logic)
+                # lightweight structure check
+                if "if" not in logic or "then" not in logic or not isinstance(logic["if"], list):
+                    raise serializers.ValidationError({"conditions": "Each condition.logic must normalize to {'if': [...], 'then': ...}."})
 
+                # validate ONLY what we can know now; allow forward refs
                 preds = logic["if"]
-                if not isinstance(preds, list):
-                    raise serializers.ValidationError({"conditions": "'if' must be a list."})
-
                 for p in preds:
+                    # Only '==' supported currently
                     if "==" not in p or not isinstance(p["=="], list) or len(p["=="]) != 2:
-                        raise serializers.ValidationError({"conditions": "Only '==' predicate with 2 operands supported."})
+                        raise serializers.ValidationError({"conditions": "Only 'eq' (→ '==') predicate with 2 operands is supported."})
                     ref_code, ref_val = p["=="]
-                    if not Question.objects.filter(code=ref_code).exists():
-                        raise serializers.ValidationError({"conditions": f"Unknown question code in condition: {ref_code}"})
-                    # if reference is a choice question (has options), enforce valid option value
+
+                    # Do not hard-fail if ref question doesn't exist yet (admin may add it next).
+                    # If it exists and has options, ensure value is valid.
                     if ref_code in opt_map and opt_map[ref_code]:
                         if ref_val not in opt_map[ref_code]:
                             raise serializers.ValidationError({"conditions": f"Invalid option '{ref_val}' for {ref_code}"})
 
-                # 'then' is usually boolean (true = show), we accept truthy
-                # (your engine treats presence of satisfied condition as visibility=true)
+                normalized_conds.append({"logic": logic})
+
+            # replace with normalized list so create/update uses canonical form
+            self._normalized_conditions = normalized_conds
+        else:
+            self._normalized_conditions = None
+
         return attrs
 
+    # ---- persistence ------------------------------------------------------
     @transaction.atomic
     def create(self, validated_data):
         opts = validated_data.pop("options", [])
         dims = validated_data.pop("dimensions", [])
-        conds = validated_data.pop("conditions", [])
+        # use normalized conditions if present
+        conds = self._normalized_conditions if hasattr(self, "_normalized_conditions") else validated_data.pop("conditions", [])
         q = Question.objects.create(**validated_data)
-        for o in opts: AnswerOption.objects.create(question=q, **o)
-        for d in dims: QuestionDimension.objects.create(question=q, **d)
-        for c in conds: BranchingCondition.objects.create(question=q, **c)
+        for o in (opts or []):
+            AnswerOption.objects.create(question=q, **o)
+        for d in (dims or []):
+            QuestionDimension.objects.create(question=q, **d)
+        for c in (conds or []):
+            BranchingCondition.objects.create(question=q, **c)
         return q
 
     @transaction.atomic
     def update(self, instance, validated_data):
         opts = validated_data.pop("options", None)
         dims = validated_data.pop("dimensions", None)
-        conds = validated_data.pop("conditions", None)
+        conds_in = self._normalized_conditions if hasattr(self, "_normalized_conditions") else validated_data.pop("conditions", None)
 
         for k, v in validated_data.items():
             setattr(instance, k, v)
@@ -186,9 +241,12 @@ class QuestionAdminSerializer(serializers.ModelSerializer):
             for item in data:
                 Model.objects.create(question=instance, **item)
 
-        if opts is not None: replace(instance.options, opts, AnswerOption)
-        if dims is not None: replace(instance.dimensions, dims, QuestionDimension)
-        if conds is not None: replace(instance.conditions, conds, BranchingCondition)
+        if opts is not None:
+            replace(instance.options, opts, AnswerOption)
+        if dims is not None:
+            replace(instance.dimensions, dims, QuestionDimension)
+        if conds_in is not None:
+            replace(instance.conditions, conds_in, BranchingCondition)
         return instance
     
 class BankAdminSerializer(serializers.ModelSerializer):

@@ -1,6 +1,8 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework import status
+from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 from django.db.models import Max
@@ -107,24 +109,72 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
     )
     @action(detail=True, methods=["post"], url_path="duplicate")
     def duplicate(self, request, pk=None):
-        q = self.get_object()
-        new_code = request.data.get("new_code")
+        """
+        Duplicate a question including options/dimensions/conditions.
+        Avoids reverse set assignment; uses create/bulk_create instead.
+        """
+        src = self.get_object()
+        new_code = (request.data.get("new_code") or "").strip()
         if not new_code:
-            return Response({"detail":"new_code is required"}, status=400)
+            return Response({"detail": "new_code is required."}, status=status.HTTP_400_BAD_REQUEST)
         if Question.objects.filter(code=new_code).exists():
-            return Response({"detail":"new_code already exists"}, status=400)
+            return Response({"detail": "new_code already exists."}, status=status.HTTP_400_BAD_REQUEST)
 
-        payload = QuestionAdminSerializer(q).data
-        payload["code"] = new_code
-        payload.pop("id", None)
-        for child_list in ("options","dimensions","conditions"):
-            for c in payload.get(child_list, []):
-                c.pop("id", None)
+        with transaction.atomic():
+            q = Question.objects.create(
+                section=src.section,
+                code=new_code,
+                text=src.text,
+                help_text=src.help_text,
+                type=src.type,
+                required=src.required,
+                order=(src.order or 0) + 1,
+                max_score=src.max_score,
+                weight=src.weight,
+                is_active=getattr(src, "is_active", True),
+            )
 
-        new_ser = QuestionAdminSerializer(data=payload)
-        new_ser.is_valid(raise_exception=True)
-        obj = new_ser.save()
-        return Response(QuestionAdminSerializer(obj).data, status=201)
+            # Clone options
+            opts = [
+                AnswerOption(
+                    question=q,
+                    label=o.label,
+                    value=o.value,
+                    points=o.points,
+                )
+                for o in src.options.all()
+            ]
+            if opts:
+                AnswerOption.objects.bulk_create(opts)
+
+            # Clone dimensions
+            dims = [
+                QuestionDimension(
+                    question=q,
+                    code=d.code,
+                    label=d.label,
+                    min_value=d.min_value,
+                    max_value=d.max_value,
+                    points_per_unit=d.points_per_unit,
+                    weight=d.weight,
+                )
+                for d in src.dimensions.all()
+            ]
+            if dims:
+                QuestionDimension.objects.bulk_create(dims)
+
+            # Clone conditions
+            conds = [
+                BranchingCondition(
+                    question=q,
+                    logic=c.logic,
+                )
+                for c in src.conditions.all()
+            ]
+            if conds:
+                BranchingCondition.objects.bulk_create(conds)
+
+        return Response(QuestionAdminSerializer(q).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(
         summary="Bulk reorder questions",

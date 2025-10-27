@@ -68,7 +68,7 @@ class QuestionAdminSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"code": "Question code must be unique."})
 
         # Choice requirements
-        if q_type in ["SINGLE_CHOICE", "MULTI_CHOICE"]:
+        if q_type in ["SINGLE_CHOICE", "MULTI_CHOICE", "NPS"]:
             if options is None and instance is None:
                 raise serializers.ValidationError({"options": "Choice types require options."})
             if options:

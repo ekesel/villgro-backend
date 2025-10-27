@@ -297,7 +297,7 @@ class SubmitAssessmentView(APIView):
                 if not ans:
                     continue
                 points = 0
-                if q.type == "SINGLE_CHOICE":
+                if q.type in ["SINGLE_CHOICE", "NPS"]:
                     val = ans.get("value")
                     opt = q.options.filter(value=val).first()
                     if opt:

@@ -54,7 +54,7 @@ def question_points(q: Question, ans: dict) -> float:
     if not ans:
         return 0.0
 
-    if q.type == "SINGLE_CHOICE":
+    if q.type in ["SINGLE_CHOICE", "NPS"]:
         val = ans.get("value")
         opt = q.options.filter(value=val).first()
         return float(opt.points) if opt else 0.0

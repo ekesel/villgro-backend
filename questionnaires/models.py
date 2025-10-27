@@ -19,6 +19,7 @@ class Question(models.Model):
         ("SLIDER", "Slider"),
         ("MULTI_SLIDER", "Multi Slider"),
         ("RATING", "Rating"),
+        ("NPS", "Net Promoter Score"),
     ]
 
     code = models.CharField(max_length=100, unique=True)

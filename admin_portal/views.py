@@ -146,7 +146,7 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="reorder-options")
     def reorder_options(self, request, pk=None):
         q = self.get_object()
-        if q.type not in ["SINGLE_CHOICE","MULTI_CHOICE"]:
+        if q.type not in ["SINGLE_CHOICE","MULTI_CHOICE", "NPS"]:
             return Response({"detail":"Only for choice questions"}, status=400)
         # Add 'order' to AnswerOption model if you want persistent option order (else skip)
         items = request.data.get("orders", [])

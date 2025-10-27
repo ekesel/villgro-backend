@@ -113,7 +113,7 @@ class QuestionSerializer(serializers.ModelSerializer):
         ]
 
     def get_options(self, obj):
-        if obj.type in ["SINGLE_CHOICE", "MULTI_CHOICE"]:
+        if obj.type in ["SINGLE_CHOICE", "MULTI_CHOICE", "NPS"]:
             return [{"label": o.label, "value": o.value, "points": str(o.points)} for o in obj.options.all()]
         return None
     

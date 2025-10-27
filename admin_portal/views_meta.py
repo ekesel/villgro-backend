@@ -42,6 +42,6 @@ class OptionValuesMeta(APIView):
             q = Question.objects.prefetch_related("options").get(code=code)
         except Question.DoesNotExist:
             return Response({"detail":"Unknown question code"}, status=404)
-        if q.type not in ["SINGLE_CHOICE","MULTI_CHOICE"]:
+        if q.type not in ["SINGLE_CHOICE","MULTI_CHOICE", "NPS"]:
             return Response([])
         return Response([{"label": o.label, "value": o.value} for o in q.options.all()])

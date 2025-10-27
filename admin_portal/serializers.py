@@ -6,14 +6,42 @@ from questionnaires.models import (
 )
 from banks.models import Bank
 from organizations.models import Organization
+from django.db.models import Sum
 
 User = get_user_model()
 
 # -------- Sections
 class SectionAdminSerializer(serializers.ModelSerializer):
+    total_questions = serializers.SerializerMethodField()
+    active_questions = serializers.SerializerMethodField()
+    inactive_questions = serializers.SerializerMethodField()
+    weightage = serializers.SerializerMethodField()
+
     class Meta:
         model = Section
-        fields = ["id", "code", "title", "order"]
+        fields = [
+            "id", "code", "title", "order",
+            "weightage", "total_questions",
+            "active_questions", "inactive_questions",
+        ]
+
+    def get_total_questions(self, obj):
+        return Question.objects.filter(section=obj).count()
+
+    def get_active_questions(self, obj):
+        return Question.objects.filter(section=obj, is_active=True).count()
+
+    def get_inactive_questions(self, obj):
+        return Question.objects.filter(section=obj, is_active=False).count()
+
+    def get_weightage(self, obj):
+        """Calculate weightage as percentage of section’s total weight vs all sections."""
+        qs = Question.objects.filter(is_active=True)
+        total_weight = qs.aggregate(total=Sum("weight"))["total"] or 0
+        section_weight = qs.filter(section=obj).aggregate(total=Sum("weight"))["total"] or 0
+        if total_weight == 0:
+            return 0
+        return round((section_weight / total_weight) * 100, 2)
 
 
 # -------- Nested children

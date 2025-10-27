@@ -46,7 +46,7 @@ class QuestionAdminSerializer(serializers.ModelSerializer):
         fields = [
             "id", "section", "code", "text", "help_text",
             "type", "required", "order", "max_score", "weight",
-            "options", "dimensions", "conditions",
+            "options", "dimensions", "conditions", "is_active",
         ]
 
     # Type-specific validations that match the runtime engine

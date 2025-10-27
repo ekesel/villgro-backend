@@ -249,7 +249,7 @@ class SaveAnswersView(APIView):
 
         section_code = request.query_params.get("section")
         if not section_code and serializer.validated_data:
-            first_q = Question.objects.filter(code=serializer.validated_data[0]["question"]).select_related("section").first()
+            first_q = Question.objects.filter(code=serializer.validated_data[0]["question"], is_active=True).select_related("section").first()
             if first_q:
                 section_code = first_q.section.code
 

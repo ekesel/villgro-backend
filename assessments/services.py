@@ -44,7 +44,7 @@ def compute_progress(assessment):
 
 def get_control_qcodes() -> set:
     control = set()
-    for q in Question.objects.prefetch_related("conditions").all():
+    for q in Question.objects.filter(is_active=True).prefetch_related("conditions").all():
         for cond in q.conditions.all():
             control |= extract_q_refs(cond.logic)
     return control

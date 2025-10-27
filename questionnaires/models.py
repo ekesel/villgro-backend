@@ -31,6 +31,7 @@ class Question(models.Model):
     order = models.PositiveIntegerField(default=0)
     max_score = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     weight = models.DecimalField(max_digits=5, decimal_places=2, default=1.0)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["section", "order"]

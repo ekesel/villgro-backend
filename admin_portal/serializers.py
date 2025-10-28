@@ -193,13 +193,13 @@ class QuestionAdminSerializer(serializers.ModelSerializer):
                     # Only '==' supported currently
                     if "==" not in p or not isinstance(p["=="], list) or len(p["=="]) != 2:
                         raise serializers.ValidationError({"conditions": "Only 'eq' (→ '==') predicate with 2 operands is supported."})
-                    ref_code, ref_val = p["=="]
+                    # ref_code, ref_val = p["=="]
 
-                    # Do not hard-fail if ref question doesn't exist yet (admin may add it next).
-                    # If it exists and has options, ensure value is valid.
-                    if ref_code in opt_map and opt_map[ref_code]:
-                        if ref_val not in opt_map[ref_code]:
-                            raise serializers.ValidationError({"conditions": f"Invalid option '{ref_val}' for {ref_code}"})
+                    # # Do not hard-fail if ref question doesn't exist yet (admin may add it next).
+                    # # If it exists and has options, ensure value is valid.
+                    # if ref_code in opt_map and opt_map[ref_code]:
+                    #     if ref_val not in opt_map[ref_code]:
+                    #         raise serializers.ValidationError({"conditions": f"Invalid option '{ref_val}' for {ref_code}"})
 
                 normalized_conds.append({"logic": logic})
 

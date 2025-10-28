@@ -8,6 +8,7 @@ from banks.models import Bank
 from organizations.models import Organization
 from django.db.models import Sum
 import time
+from admin_portal.models import ActivityLog
 
 User = get_user_model()
 
@@ -339,3 +340,17 @@ class AdminSPOUpdateSerializer(serializers.ModelSerializer):
                 setattr(org, k, v)
             org.save()
         return instance
+
+class ActivityLogSerializer(serializers.ModelSerializer):
+    actor_email = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ActivityLog
+        fields = [
+            "id", "created_at", "actor", "actor_email",
+            "action", "app_label", "model", "object_id", "object_repr",
+            "changes", "meta", "help_text",
+        ]
+
+    def get_actor_email(self, obj):
+        return getattr(obj.actor, "email", None)

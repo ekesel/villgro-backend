@@ -41,10 +41,14 @@ from admin_portal.views_meta import (
 from admin_portal.views_bank import BankAdminViewSet
 from admin_portal.views_spos import SPOAdminViewSet
 from admin_portal.views_dashboard import AdminDashboardSummaryView
+from admin_portal.views_audit import ActivityListView, ActivityDetailView
 
 from rest_framework.routers import DefaultRouter
 
-router = DefaultRouter()
+class OptionalSlashRouter(DefaultRouter):
+    trailing_slash = '/?'  # accept both
+
+router = OptionalSlashRouter()
 router.register(r"api/admin/sections", SectionAdminViewSet, basename="admin-sections")
 router.register(r"api/admin/questions", QuestionAdminViewSet, basename="admin-questions")
 router.register(r"api/admin/banks", BankAdminViewSet, basename="admin-banks")
@@ -103,6 +107,8 @@ urlpatterns = [
     path("api/admin/meta/question-codes/", QuestionCodesMeta.as_view(), name="admin-meta-question-codes"),
     path("api/admin/meta/option-values/", OptionValuesMeta.as_view(), name="admin-meta-option-values"),
     path("api/admin/dashboard/summary", AdminDashboardSummaryView.as_view(), name="admin-dashboard-summary"),
+    path("api/admin/audit/", ActivityListView.as_view(), name="admin-audit-list"),
+    path("api/admin/audit/<int:pk>/", ActivityDetailView.as_view(), name="admin-audit-detail"),
 ]
 
 urlpatterns += router.urls

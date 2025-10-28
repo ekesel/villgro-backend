@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Tuple, List
 
 from django.utils import timezone
-from django.db.models import Count, Q
+from django.db.models import Count
 from django.core.cache import cache
 
 from rest_framework.views import APIView
@@ -15,9 +15,9 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 from accounts.models import User
 from organizations.models import Organization, OnboardingProgress
 from assessments.models import Assessment
-from questionnaires.models import Section
 from assessments.services import compute_progress
 from admin_portal.permissions import IsAdminRole
+from admin_portal.models import ActivityLog
 
 
 def _window_from_query(params) -> Tuple[datetime, datetime]:
@@ -195,6 +195,16 @@ class AdminDashboardSummaryView(APIView):
 
         # ---------- Recent activity (empty per SOW for now) ----------
         recent_activity: List[Dict[str, Any]] = []
+        recent = ActivityLog.objects.order_by("-created_at")[:10]
+        if len(recent) > 0:
+            recent_activity = [{
+                "id": r.id,
+                "timestamp": r.created_at.isoformat(),
+                "actor": getattr(r.actor, "email", None),
+                "action": r.action,
+                "object": f"{r.app_label}.{r.model}#{r.object_id}",
+                "help_text": r.help_text,
+            } for r in recent]
 
         data = {
             "kpi": {

@@ -1,4 +1,6 @@
 from django.db import models
+from django.conf import settings
+
 
 class Bank(models.Model):
     class Status(models.TextChoices):
@@ -11,6 +13,14 @@ class Bank(models.Model):
     contact_phone = models.CharField(max_length=50, blank=True)
     status = models.CharField(max_length=8, choices=Status.choices, default=Status.ACTIVE)
     notes = models.TextField(blank=True)
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="bank",
+        help_text="BANK_USER who manages this bank"
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Bank — SPO Report</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #222; }
+    h1, h2 { margin: 0 0 8px; }
+    .muted { color: #666; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
+    th { background: #f7f7f7; text-align: left; }
+    .header { display: flex; justify-content: space-between; align-items: baseline; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Bank — SPO Report</h1>
+    <div class="muted">Generated: {{ generated_at }}</div>
+  </div>
+
+  <h2>1. SPO</h2>
+  <div>
+    <div><strong>ID:</strong> {{ spo.id }}</div>
+    <div><strong>Email:</strong> {{ spo.email }}</div>
+    <div><strong>Name:</strong> {{ spo.first_name }} {{ spo.last_name }}</div>
+    <div><strong>Status:</strong> {% if spo.is_active %}Active{% else %}Inactive{% endif %}</div>
+    <div><strong>Date Joined:</strong> {{ spo.date_joined }}</div>
+  </div>
+
+  <h2>2. Organization</h2>
+  <div>
+    <div><strong>Name:</strong> {{ org.name }}</div>
+    <div><strong>Registration Type:</strong> {{ org.registration_type }}</div>
+    <div><strong>CIN:</strong> {{ org.cin|default:"-" }}</div>
+    <div><strong>Focus Sector:</strong> {{ org.focus_area|default:"-" }}</div>
+    <div><strong>POC Email:</strong> {{ org.poc_email|default:"-" }}</div>
+  </div>
+
+  <h2>3. Assessments & Eligibility</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Status</th>
+        <th>Started</th>
+        <th>Submitted</th>
+        <th>Scores</th>
+        <th>Eligibility</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in assessments %}
+        <tr>
+          <td>{{ a.id }}</td>
+          <td>{{ a.status }}</td>
+          <td>{{ a.started_at|default:"-" }}</td>
+          <td>{{ a.submitted_at|default:"-" }}</td>
+          <td>
+            <div>Overall: <strong>{{ a.scores.overall|default:0 }}</strong></div>
+            {% if a.scores.sections %}
+              {% for code, score in a.scores.sections.items %}
+                <div><strong>{{ code }}</strong>: {{ score }}</div>
+              {% endfor %}
+            {% endif %}
+          </td>
+          <td>
+            {% if a.eligibility %}
+              <div>Overall (elig): <strong>{{ a.eligibility.overall|floatformat:2 }}</strong></div>
+              <div>Decision: <strong>{% if a.eligibility.decision %}Eligible{% else %}Ineligible{% endif %}</strong></div>
+              <div>Note: {{ a.eligibility.reason|default:"-" }}</div>
+            {% else %}
+              <em>No eligibility record</em>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6"><em>No assessments</em></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

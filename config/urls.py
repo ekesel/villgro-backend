@@ -43,6 +43,7 @@ from admin_portal.views_spos import SPOAdminViewSet
 from admin_portal.views_dashboard import AdminDashboardSummaryView
 from admin_portal.views_audit import ActivityListView, ActivityDetailView
 from questionnaires.views import LoanRequestViewSet
+from banks.views_portal import BankSPOViewSet
 
 from rest_framework.routers import DefaultRouter
 
@@ -55,6 +56,8 @@ router.register(r"api/admin/questions", QuestionAdminViewSet, basename="admin-qu
 router.register(r"api/admin/banks", BankAdminViewSet, basename="admin-banks")
 router.register(r"api/admin/spos", SPOAdminViewSet, basename="admin-spos")
 router.register(r"api/loan", LoanRequestViewSet, basename="loan")
+router.register(r"api/bank/spos", BankSPOViewSet, basename="bank-spos")
+
 
 
 urlpatterns = [

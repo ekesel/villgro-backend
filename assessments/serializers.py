@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Assessment
+from assessments.models import Assessment, AssessmentFeedback
 from questionnaires.models import Section, Question, AnswerOption, QuestionDimension
 
 GRAPH_RANGES = {
@@ -156,3 +156,25 @@ class QuestionSerializer(serializers.ModelSerializer):
 class AnswerUpsertSerializer(serializers.Serializer):
     question = serializers.CharField()
     data = serializers.JSONField()
+
+class AssessmentFeedbackSerializer(serializers.ModelSerializer):
+    assessment = serializers.PrimaryKeyRelatedField(
+        queryset=Assessment.objects.all(),
+        required=True  # or False if your view sets it
+    )
+    class Meta:
+        model = AssessmentFeedback
+        fields = ["assessment", "reasons", "comment", "created_at"]
+        read_only_fields = ["created_at"]
+
+    def validate_assessment(self, a: Assessment):
+        # Ensure caller owns this assessment
+        inst = getattr(self, "instance", None)
+        if inst and inst.assessment_id == getattr(a, "id", a):
+            return a
+        request = self.context.get("request")
+        if not request or not hasattr(request, "user"):
+            raise serializers.ValidationError("Invalid request context.")
+        if a.organization.created_by_id != request.user.id:
+            raise serializers.ValidationError("Not allowed for this assessment.")
+        return a

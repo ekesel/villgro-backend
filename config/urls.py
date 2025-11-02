@@ -38,12 +38,15 @@ from admin_portal.views_meta import (
     QuestionCodesMeta,
     OptionValuesMeta,
 )
+from assessments.views_feedback import FeedbackView
 from admin_portal.views_bank import BankAdminViewSet
 from admin_portal.views_spos import SPOAdminViewSet
 from admin_portal.views_dashboard import AdminDashboardSummaryView
 from admin_portal.views_audit import ActivityListView, ActivityDetailView
 from questionnaires.views import LoanRequestViewSet
 from banks.views_portal import BankSPOViewSet
+from admin_portal.views_reviews import AdminReviewsViewSet
+from admin_portal.views_admin_users import AdminUsersViewSet
 
 from rest_framework.routers import DefaultRouter
 
@@ -57,6 +60,8 @@ router.register(r"api/admin/banks", BankAdminViewSet, basename="admin-banks")
 router.register(r"api/admin/spos", SPOAdminViewSet, basename="admin-spos")
 router.register(r"api/loan", LoanRequestViewSet, basename="loan")
 router.register(r"api/bank/spos", BankSPOViewSet, basename="bank-spos")
+router.register(r"api/admin/reviews", AdminReviewsViewSet, basename="admin-reviews")
+router.register(r"api/admin/admins", AdminUsersViewSet, basename="admin-users")
 
 
 
@@ -105,6 +110,9 @@ urlpatterns = [
     path("api/assessments/<int:pk>/results/summary", ResultsSummaryView.as_view(), name="assessment-results-summary"),
     path("api/assessments/<int:pk>/results/section", SectionResultsView.as_view(), name="assessment-results-section"),
     path("api/assessments/<int:pk>/report.pdf", ReportPDFView.as_view(), name="assessment-report-pdf"),
+
+    # SPO feedback
+    path("api/feedback", FeedbackView.as_view(), name="spo-feedback"),
 
     #admin portal
     path("api/admin/meta/question-types/", QuestionTypesMeta.as_view(), name="admin-meta-question-types"),

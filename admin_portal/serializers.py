@@ -359,3 +359,54 @@ class ActivityLogSerializer(serializers.ModelSerializer):
 
     def get_actor_email(self, obj):
         return getattr(obj.actor, "email", None)
+    
+class AdminReviewListSerializer(serializers.Serializer):
+    """
+    Flat payload for Admin Reviews list.
+    """
+    id = serializers.IntegerField(help_text="Feedback ID")
+    assessment_id = serializers.IntegerField()
+    date = serializers.DateTimeField(source="created_at")
+    user_id = serializers.IntegerField()
+    user_email = serializers.EmailField()
+    organization_name = serializers.CharField()
+    status = serializers.CharField(help_text="Completed/Incomplete derived from assessment.status")
+    review = serializers.CharField(allow_blank=True)
+
+class AdminReviewDetailSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    assessment_id = serializers.IntegerField()
+    date = serializers.DateTimeField(source="created_at")
+    user = serializers.DictField()
+    organization = serializers.DictField()
+    status = serializers.CharField()
+    reasons = serializers.ListField(child=serializers.CharField())
+    comment = serializers.CharField(allow_blank=True)
+
+class AdminUserSerializerLite(serializers.Serializer):
+    id = serializers.IntegerField()
+    email = serializers.EmailField()
+    first_name = serializers.CharField(allow_blank=True)
+    last_name = serializers.CharField(allow_blank=True)
+    is_active = serializers.BooleanField()
+    date_joined = serializers.DateTimeField()
+
+class AdminUserCreateSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name = serializers.CharField(required=False, allow_blank=True)
+    phone = serializers.CharField(required=False, allow_blank=True)
+    password = serializers.CharField(write_only=True)
+
+    def create(self, validated_data):
+        User = get_user_model()
+        u = User.objects.create_user(
+            email=validated_data["email"],
+            password=validated_data["password"],
+            role=User.Role.ADMIN,
+            first_name=validated_data.get("first_name",""),
+            last_name=validated_data.get("last_name",""),
+            phone=validated_data.get("phone",""),
+            is_staff=True,
+        )
+        return u

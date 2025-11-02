@@ -1,0 +1,35 @@
+[
+  {
+    "section_code": "IMPACT",
+    "min_threshold": 60,
+    "max_threshold": 100,
+    "weight": 40,
+    "criteria": {
+      "sub_metrics": ["reach", "depth", "innovation"],
+      "notes": "Higher impact correlates with greater eligibility weight."
+    },
+    "recommendation": "High-impact ventures are eligible for full funding consideration."
+  },
+  {
+    "section_code": "RISK",
+    "min_threshold": 0,
+    "max_threshold": 40,
+    "weight": 30,
+    "criteria": {
+      "sub_metrics": ["financial", "governance", "execution"],
+      "notes": "Lower risk improves eligibility. Above 40 indicates disqualification."
+    },
+    "recommendation": "Keep risk profile under 40 to qualify."
+  },
+  {
+    "section_code": "RETURN",
+    "min_threshold": 55,
+    "max_threshold": 100,
+    "weight": 30,
+    "criteria": {
+      "sub_metrics": ["sustainability", "growth_potential", "revenue_model"],
+      "notes": "Return reflects future sustainability and business viability."
+    },
+    "recommendation": "Strong returns boost eligibility confidence."
+  }
+]

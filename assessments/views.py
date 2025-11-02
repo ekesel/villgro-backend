@@ -1,14 +1,15 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter, OpenApiExample
-from rest_framework import status
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter, OpenApiExample, inline_serializer
+from rest_framework import status, serializers
 from weasyprint import HTML
 from django.template.loader import render_to_string
 from django.http import HttpResponse
 from django.utils import timezone
 from django.conf import settings
 from django.shortcuts import get_object_or_404
+
 from assessments.services import compute_scores
 from assessments.models import Assessment, Answer
 from assessments.serializers import (
@@ -20,6 +21,7 @@ from assessments.serializers import (
 from questionnaires.models import Section, Question
 from assessments.services import build_answers_map, visible_questions_for_section, compute_progress
 from assessments.services import get_control_qcodes
+from questionnaires.logic import eligibility_check
 
 ASSESSMENT_COOLDOWN_DAYS = int(getattr(settings, "ASSESSMENT_COOLDOWN_DAYS", 180))
 
@@ -28,16 +30,24 @@ class StartAssessmentView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        tags=["Assessment • SPO"],
+        operation_id="assessment_start_or_resume",
         summary="Start or resume an assessment",
-        description="Starts a new draft or resumes an existing draft. Returns 403 if cooldown is active.",
+        description=(
+            "Creates a new **DRAFT** assessment for the SPO's organization **or** resumes an existing draft.\n\n"
+            "If the latest submitted assessment is still in **cooldown**, returns `403` with the next allowed date."
+        ),
         responses={
             201: AssessmentSerializer,
             200: AssessmentSerializer,
-            403: OpenApiResponse(description="Cooldown period active"),
+            403: inline_serializer(
+                name="CooldownActive",
+                fields={"detail": serializers.CharField()}
+            ),
         },
         examples=[
             OpenApiExample(
-                "Draft Assessment",
+                "Draft Assessment (201)",
                 value={
                     "id": 42,
                     "status": "DRAFT",
@@ -53,7 +63,13 @@ class StartAssessmentView(APIView):
                     "resume": {"last_section": "IMPACT"},
                     "scores": {}
                 },
-            )
+                response_only=True,
+            ),
+            OpenApiExample(
+                "Cooldown active (403)",
+                value={"detail": "Next attempt available on 2026-01-01T00:00:00Z"},
+                response_only=True,
+            ),
         ],
     )
     def post(self, request):
@@ -77,10 +93,15 @@ class CurrentAssessmentView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        tags=["Assessment • SPO"],
+        operation_id="assessment_current_draft",
         summary="Get current draft assessment (with progress and resume state)",
         responses={
             200: AssessmentSerializer,
-            404: OpenApiResponse(description="No active assessment"),
+            404: inline_serializer(
+                name="NoActiveAssessment",
+                fields={"detail": serializers.CharField()}
+            ),
         },
         examples=[
             OpenApiExample(
@@ -125,8 +146,29 @@ class SectionsView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        tags=["Assessment • SPO"],
+        operation_id="assessment_sections",
         summary="List sections with progress",
-        responses={200: OpenApiResponse(description="List of sections with progress, percent, and last_section")},
+        parameters=[
+            OpenApiParameter(
+                name="pk",
+                description="Assessment ID",
+                required=True,
+                type=int,
+                location=OpenApiParameter.PATH
+            )
+        ],
+        responses={
+            200: inline_serializer(
+                name="SectionsWithProgress",
+                fields={
+                    "sections": SectionSerializer(many=True),
+                    "progress": serializers.JSONField(),
+                    "resume": serializers.JSONField(),
+                }
+            ),
+            404: OpenApiResponse(description="Assessment not found"),
+        },
         examples=[
             OpenApiExample(
                 "Sections Response",
@@ -175,9 +217,54 @@ class QuestionsView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        tags=["Assessment • SPO"],
+        operation_id="assessment_section_questions",
         summary="Get visible questions in a section",
-        parameters=[OpenApiParameter(name="section", required=True, type=str)],
-        responses={200: OpenApiResponse(description="Section questions with answers")},
+        parameters=[
+            OpenApiParameter(
+                name="pk",
+                description="Assessment ID",
+                required=True,
+                type=int,
+                location=OpenApiParameter.PATH
+            ),
+            OpenApiParameter(
+                name="section",
+                description="Section code (e.g., IMPACT, RISK, RETURN)",
+                required=True,
+                type=str,
+                location=OpenApiParameter.QUERY
+            ),
+        ],
+        responses={
+            200: inline_serializer(
+                name="SectionQuestionsResponse",
+                fields={
+                    "section": serializers.CharField(),
+                    "questions": QuestionSerializer(many=True),
+                }
+            ),
+            404: OpenApiResponse(description="Assessment or Section not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Questions Example",
+                value={
+                    "section": "IMPACT",
+                    "questions": [
+                        {
+                            "code": "IMP_Q1",
+                            "text": "How many beneficiaries last year?",
+                            "type": "SLIDER",
+                            "required": True,
+                            "order": 1,
+                            "answer": {"value": 8}
+                        }
+                    ]
+                },
+                response_only=True
+            )
+        ],
     )
     def get(self, request, pk):
         section_code = request.query_params.get("section")
@@ -194,18 +281,53 @@ class SaveAnswersView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        tags=["Assessment • SPO"],
+        operation_id="assessment_save_answers",
         summary="Save answers (bulk upsert)",
+        description=(
+            "Bulk upsert answers for the given assessment. Pass an array of `{question, data}` objects inside `answers`.\n\n"
+            "**Note:** The server recomputes progress and updates the resume pointer (`last_section`)."
+        ),
         parameters=[
+            OpenApiParameter(
+                name="pk",
+                description="Assessment ID",
+                required=True, type=int, location=OpenApiParameter.PATH
+            ),
             OpenApiParameter(
                 name="section",
                 description="Section code you are editing; used to update resume state",
-                required=False,
-                type=str,
+                required=False, type=str, location=OpenApiParameter.QUERY
             )
         ],
-        request=AnswerUpsertSerializer(many=True),
-        responses={200: OpenApiResponse(description="Updated progress counters with percent and resume")},
+        request=inline_serializer(
+            name="SaveAnswersRequest",
+            fields={
+                "answers": AnswerUpsertSerializer(many=True)
+            }
+        ),
+        responses={
+            200: inline_serializer(
+                name="SaveAnswersResponse",
+                fields={
+                    "progress": serializers.JSONField(),
+                    "resume": serializers.JSONField(),
+                }
+            ),
+            400: inline_serializer(name="BadRequest", fields={"detail": serializers.CharField()}),
+            404: OpenApiResponse(description="Assessment not found"),
+        },
         examples=[
+            OpenApiExample(
+                "Request Body",
+                request_only=True,
+                value={
+                    "answers": [
+                        {"question": "IMP_Q1", "data": {"value": 8}},
+                        {"question": "RISK_Q2", "data": {"values": ["FRAUD", "SUPPLY"]}}
+                    ]
+                }
+            ),
             OpenApiExample(
                 "Save Answers Response",
                 value={
@@ -265,12 +387,55 @@ class SaveAnswersView(APIView):
             "resume": {"last_section": progress.get("last_section")}
         })
 
+
 class SubmitAssessmentView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        tags=["Assessment • SPO"],
+        operation_id="assessment_submit",
         summary="Submit assessment and compute scores",
-        responses={200: AssessmentSerializer, 400: OpenApiResponse(description="Missing required answers")},
+        description=(
+            "Validates that all **required** questions are answered, computes per-section + overall scores, "
+            "sets status to **SUBMITTED**, applies cooldown, and persists.\n\n"
+            "Also computes loan eligibility in the background of the response."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="pk",
+                description="Assessment ID",
+                required=True, type=int, location=OpenApiParameter.PATH
+            )
+        ],
+        responses={
+            200: AssessmentSerializer,
+            400: inline_serializer(
+                name="MissingRequiredAnswers",
+                fields={
+                    "detail": serializers.CharField(),
+                    "sections": serializers.ListField(child=serializers.CharField())
+                }
+            ),
+            404: OpenApiResponse(description="Assessment not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Missing required answers (400)",
+                value={"detail": "Missing answers", "sections": ["IMPACT", "RISK"]},
+                response_only=True
+            ),
+            OpenApiExample(
+                "Submitted (200)",
+                value={
+                    "id": 42,
+                    "status": "SUBMITTED",
+                    "scores": {"sections": {"IMPACT": 90, "RISK": 20, "RETURN": 88}, "overall": 66},
+                    "submitted_at": "2025-11-02T09:05:00Z",
+                    "cooldown_until": "2026-05-01T00:00:00Z"
+                },
+                response_only=True
+            ),
+        ],
     )
     def post(self, request, pk):
         assessment = get_object_or_404(
@@ -330,13 +495,22 @@ class SubmitAssessmentView(APIView):
         assessment.cooldown_until = timezone.now() + timezone.timedelta(days=ASSESSMENT_COOLDOWN_DAYS)
         assessment.scores = scores
         assessment.save(update_fields=["status", "submitted_at", "cooldown_until", "scores"])
+        eligibility = eligibility_check(assessment)
         return Response(AssessmentSerializer(assessment).data)
 
 
 class ResultsView(APIView):
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(summary="Get submitted assessment results", responses={200: AssessmentSerializer, 404: OpenApiResponse})
+    @extend_schema(
+        tags=["Assessment • SPO"],
+        operation_id="assessment_results",
+        summary="Get submitted assessment results",
+        responses={
+            200: AssessmentSerializer,
+            404: OpenApiResponse(description="Assessment not found or not submitted"),
+        },
+    )
     def get(self, request, pk):
         assessment = get_object_or_404(
             Assessment, pk=pk, organization=request.user.organization, status="SUBMITTED"
@@ -347,32 +521,59 @@ class ResultsView(APIView):
 class HistoryView(APIView):
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(summary="List submitted assessment attempts", responses={200: AssessmentSerializer(many=True)})
+    @extend_schema(
+        tags=["Assessment • SPO"],
+        operation_id="assessment_history",
+        summary="List submitted assessment attempts",
+        responses={200: AssessmentSerializer(many=True)},
+    )
     def get(self, request):
         org = request.user.organization
         assessments = org.assessments.filter(status="SUBMITTED")
         return Response(AssessmentSerializer(assessments, many=True).data)
-    
+
+
 class ResultsSummaryView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        tags=["Assessment • SPO"],
+        operation_id="assessment_results_summary",
         summary="Results summary (per section + overall)",
-        responses={200: OpenApiResponse(description="Section scores and overall")},
-        examples=[OpenApiExample(
-            "Summary",
-            value={
-                "id": 42,
-                "overall": 6.38,
-                "sections": [
-                    {"code": "IMPACT", "score": 7.5},
-                    {"code": "RISK", "score": 5.0},
-                    {"code": "RETURN", "score": 6.2},
-                    {"code": "SECTOR_MATURITY", "score": 6.8}
-                ]
-            },
-            response_only=True
-        )]
+        responses={
+            200: inline_serializer(
+                name="ResultsSummary",
+                fields={
+                    "id": serializers.IntegerField(),
+                    "overall": serializers.FloatField(),
+                    "sections": serializers.ListField(
+                        child=inline_serializer(
+                            name="SectionScore",
+                            fields={
+                                "code": serializers.CharField(),
+                                "score": serializers.FloatField(),
+                            }
+                        )
+                    )
+                }
+            )
+        },
+        examples=[
+            OpenApiExample(
+                "Summary",
+                value={
+                    "id": 42,
+                    "overall": 6.38,
+                    "sections": [
+                        {"code": "IMPACT", "score": 7.5},
+                        {"code": "RISK", "score": 5.0},
+                        {"code": "RETURN", "score": 6.2},
+                        {"code": "SECTOR_MATURITY", "score": 6.8}
+                    ]
+                },
+                response_only=True
+            )
+        ]
     )
     def get(self, request, pk):
         assessment = get_object_or_404(
@@ -381,14 +582,38 @@ class ResultsSummaryView(APIView):
         s = assessment.scores or {}
         sections = [{"code": c, "score": s["sections"][c]} for c in sorted(s.get("sections", {}).keys())]
         return Response({"id": assessment.id, "overall": s.get("overall", 0), "sections": sections})
-    
+
+
 class SectionResultsView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        tags=["Assessment • SPO"],
+        operation_id="assessment_section_results_detail",
         summary="Detailed section results (question contributions)",
-        parameters=[OpenApiParameter(name="section", required=True, type=str)],
-        responses={200: OpenApiResponse(description="Per-question breakdown for a section")},
+        parameters=[
+            OpenApiParameter(
+                name="pk",
+                description="Assessment ID",
+                required=True, type=int, location=OpenApiParameter.PATH
+            ),
+            OpenApiParameter(
+                name="section",
+                description="Section code to fetch breakdown for",
+                required=True, type=str, location=OpenApiParameter.QUERY
+            ),
+        ],
+        responses={
+            200: inline_serializer(
+                name="SectionBreakdown",
+                fields={
+                    "id": serializers.IntegerField(),
+                    "section": serializers.CharField(),
+                    "questions": serializers.ListField(child=serializers.JSONField())
+                }
+            ),
+            404: OpenApiResponse(description="Assessment not found or not submitted"),
+        },
     )
     def get(self, request, pk):
         section_code = request.query_params.get("section")
@@ -400,12 +625,22 @@ class SectionResultsView(APIView):
         data = breakdown.get(section_code, [])
         return Response({"id": assessment.id, "section": section_code, "questions": data})
 
+
 class ReportPDFView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        tags=["Assessment • SPO"],
+        operation_id="assessment_report_pdf",
         summary="Download PDF report of submitted assessment",
-        responses={200: OpenApiResponse(description="PDF binary")},
+        responses={200: OpenApiResponse(description="PDF binary (application/pdf)")},
+        examples=[
+            OpenApiExample(
+                "Response headers",
+                value={"Content-Disposition": 'attachment; filename="assessment-42.pdf"'},
+                response_only=True,
+            )
+        ]
     )
     def get(self, request, pk):
         assessment = get_object_or_404(

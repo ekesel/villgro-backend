@@ -1,5 +1,12 @@
 # questionnaire/logic.py
-from typing import Any, Dict, List, Union
+from __future__ import annotations
+from typing import Any, Dict
+from decimal import Decimal
+from django.db import transaction
+from django.utils import timezone
+
+from assessments.models import Assessment
+from questionnaires.models import Section, EligibilityRule, LoanEligibilityResult, LoanInstrument
 
 Rule = Dict[str, Any]
 AnswersMap = Dict[str, Any]  # {"Q_CODE": {"value": "YES"} or {"values": [...]} or {"values": {"dim": 7}}}
@@ -88,3 +95,181 @@ def evaluate_rule(rule: Rule, answers: AnswersMap) -> bool:
     if isinstance(left, list):
         left = set(left)
     return _op_eval(left, op, val)
+
+
+# Tunables
+DEFAULT_OVERALL_PASS_THRESHOLD = Decimal("70.0")  # overall >= 70 to pass (after all section gates pass)
+CLAMP_MIN = Decimal("0")
+CLAMP_MAX = Decimal("100")
+
+
+def _clamp_0_100(x: Decimal | float | int) -> Decimal:
+    try:
+        d = Decimal(str(x))
+    except Exception:
+        return Decimal("0")
+    if d < CLAMP_MIN:
+        return CLAMP_MIN
+    if d > CLAMP_MAX:
+        return CLAMP_MAX
+    return d
+
+
+def _normalize_to_100(raw: Decimal | float | int) -> Decimal:
+    """
+    Heuristic normalization to 0–100.
+    - If 0..1  -> *100.
+    - Else if 0..10 -> *10.
+    - Else if 0..100 -> keep.
+    Any outliers are clamped.
+    """
+    try:
+        d = Decimal(str(raw))
+    except Exception:
+        return Decimal("0")
+
+    # IMPORTANT: check smaller scales first
+    if Decimal("0") <= d <= Decimal("1"):
+        return _clamp_0_100(d * Decimal("100"))
+    if Decimal("0") <= d <= Decimal("10"):
+        return _clamp_0_100(d * Decimal("10"))
+    if Decimal("0") <= d <= Decimal("100"):
+        return _clamp_0_100(d)
+
+    # If it's >100 (e.g., sums), cap it.
+    return _clamp_0_100(d)
+
+
+def _load_section_rules() -> Dict[str, EligibilityRule]:
+    """
+    Returns a mapping: section_code -> EligibilityRule
+    Only active sections that actually have a rule seeded will matter.
+    """
+    rules: Dict[str, EligibilityRule] = {}
+    for r in EligibilityRule.objects.select_related("section").all():
+        rules[r.section.code] = r
+    return rules
+
+
+def _pick_instrument(overall_score: Decimal, details: Dict) -> LoanInstrument | None:
+    """
+    Optional: choose an instrument based on score bands.
+    Replace with your product logic later. For now, leave None
+    or implement simple tiering.
+    """
+    return None
+
+
+@transaction.atomic
+def eligibility_check(assessment: Assessment, *, overall_threshold: Decimal = DEFAULT_OVERALL_PASS_THRESHOLD) -> LoanEligibilityResult:
+    """
+    Evaluates loan eligibility for a given Assessment and persists the result.
+    Requires:
+      - assessment.scores like: {"sections": {"IMPACT": X, "RISK": Y, "RETURN": Z}, "overall": ...}
+      - EligibilityRule seeded for sections you care about (IMPACT/RISK/RETURN).
+    Outcome:
+      - Section gates (min/max) must pass.
+      - Weighted overall >= overall_threshold to be eligible.
+    """
+    if not assessment.scores or "sections" not in assessment.scores:
+        # No scores yet; mark ineligible with reason.
+        return LoanEligibilityResult.objects.update_or_create(
+            assessment=assessment,
+            defaults={
+                "overall_score": Decimal("0"),
+                "is_eligible": False,
+                "matched_instrument": None,
+                "details": {
+                    "reason": "Scores not available",
+                    "sections": {},
+                    "weights_sum": 0,
+                },
+                "evaluated_at": timezone.now(),
+            },
+        )[0]
+
+    sec_scores: Dict[str, Decimal] = assessment.scores.get("sections", {}) or {}
+    rules_by_code = _load_section_rules()
+
+    # Build evaluation per section
+    details = {"sections": {}, "weights_sum": 0}
+    total_weighted = Decimal("0")
+    weights_sum = Decimal("0")
+    all_section_gates_pass = True
+
+    for section in Section.objects.all().order_by("order"):
+        code = section.code
+        raw_score = sec_scores.get(code)
+
+        # Only consider a section in weighting if it has a rule and a score
+        if (code not in rules_by_code) or (raw_score is None):
+            continue
+
+        rule = rules_by_code[code]
+        norm_score = _normalize_to_100(raw_score)
+        w = Decimal(str(rule.weight or 0))
+        min_t = Decimal(str(rule.min_threshold))
+        max_t = Decimal(str(rule.max_threshold))
+
+        # Special-case for RISK (lower is better)
+        if code.upper() == "RISK":
+            # keep RISK raw scale (usually 0–40) to avoid over-normalizing
+            if raw_score is not None and Decimal(str(raw_score)) <= max_t:
+                norm_score = Decimal(str(raw_score))
+            gate_pass = norm_score <= max_t
+        else:
+            gate_pass = (norm_score >= min_t) and (norm_score <= max_t)
+
+        # accumulate weighted overall only for sections with weight > 0
+        contrib = Decimal("0")
+        if w > 0:
+            contrib = (norm_score * w) / Decimal("100")  # weight is still treated as percentage
+            total_weighted += contrib
+            weights_sum += w
+
+        details["sections"][code] = {
+            "raw": raw_score,
+            "normalized": float(norm_score),
+            "min": float(min_t),
+            "max": float(max_t),
+            "weight": float(w),
+            "contribution": float(contrib),  # contribution on 0–100 scale
+            "gate_pass": gate_pass,
+            "criteria": rule.criteria or {},
+            "recommendation": rule.recommendation or "",
+        }
+
+        if not gate_pass:
+            all_section_gates_pass = False
+
+    details["weights_sum"] = float(weights_sum)
+
+    # If no rules contributed, cannot determine eligibility
+    if weights_sum == 0:
+        overall_score = Decimal("0")
+        is_eligible = False
+        details["reason"] = "No applicable rules or weights defined."
+    else:
+        # overall weighted score is already on 0–100 scale due to contribution math above
+        overall_score = _clamp_0_100(total_weighted / (weights_sum / Decimal("100")))
+        # Eligibility requires all gates pass AND overall >= threshold
+        is_eligible = all_section_gates_pass and (overall_score >= overall_threshold)
+        if not all_section_gates_pass:
+            details["reason"] = "One or more section gates failed."
+        elif overall_score < overall_threshold:
+            details["reason"] = f"Overall score below threshold {overall_threshold}."
+
+    instrument = _pick_instrument(overall_score, details)
+
+    # Persist & return
+    obj, _ = LoanEligibilityResult.objects.update_or_create(
+        assessment=assessment,
+        defaults={
+            "overall_score": overall_score,
+            "is_eligible": is_eligible,
+            "matched_instrument": instrument,
+            "details": details,
+            "evaluated_at": timezone.now(),
+        },
+    )
+    return obj

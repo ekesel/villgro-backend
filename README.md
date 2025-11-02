@@ -92,9 +92,3 @@ docker-compose run --rm web pytest --cov=.
 
 ---
 
-## 📌 Next Steps
-- Implement **Custom User Model** (`accounts`) with roles  
-- Add **Questionnaire models** (Sections, Questions, Logic Rules)  
-- Build **Assessment APIs** with scoring & 6-month reassessment rules  
-- Add **PDF/Charts reporting** with WeasyPrint / matplotlib  
-- Wire in **Celery + Redis** for async tasks (emails, reports)  

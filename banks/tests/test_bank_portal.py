@@ -21,7 +21,13 @@ def bank_user(db):
 @pytest.fixture
 def spo_with_data(db):
     spo = User.objects.create_user(email="spo@x.com", password="Pass123!", role=User.Role.SPO, first_name="A", last_name="B")
-    org = Organization.objects.create(name="GreenTech", registration_type=Organization.RegistrationType.PRIVATE_LTD, created_by=spo, focus_area="Health", poc_email="poc@x.com")
+    org = Organization.objects.create(
+        name="GreenTech",
+        registration_type=Organization.RegistrationType.PRIVATE_LTD,
+        created_by=spo,
+        focus_sector=Organization.FocusSector.HEALTH,
+        cin_number="U123ABC456",
+    )
     # one submitted assessment with scores
     a1 = Assessment.objects.create(
         organization=org, status="SUBMITTED",
@@ -48,7 +54,7 @@ def test_bank_spo_list(bank_user, spo_with_data):
     assert "results" in body and len(body["results"]) >= 1
     row = next(x for x in body["results"] if x["email"] == "spo@x.com")
     assert row["id"] > 0
-    assert row["focus_sector"] == "Health"
+    assert row["focus_sector"] == "HEALTH"
     assert row["last_assessment_submitted_at"] is not None
     assert row["last_loan_request_submitted_at"] is not None
 

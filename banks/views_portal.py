@@ -107,7 +107,7 @@ class BankSPOViewSet(viewsets.ViewSet):
 
         sector = request.query_params.get("sector")
         if sector:
-            qs = qs.filter(organization__focus_area=sector)
+            qs = qs.filter(organization__focus_sector=sector)
 
         is_active = request.query_params.get("is_active")
         if is_active in ("true", "false"):
@@ -162,7 +162,7 @@ class BankSPOViewSet(viewsets.ViewSet):
                 "is_active": u.is_active,
                 "date_joined": u.date_joined,
                 "organization_name": getattr(org, "name", "") or "",
-                "focus_sector": getattr(org, "focus_area", "") or "",
+                "focus_sector": getattr(org, "focus_sector", "") or "",
                 "org_created_at": getattr(org, "created_at", None) if hasattr(org, "created_at") else None,
                 "last_assessment_submitted_at": last_a_map.get(u.id),
                 "last_loan_request_submitted_at": last_lr_map.get(u.id),
@@ -255,9 +255,9 @@ class BankSPOViewSet(viewsets.ViewSet):
             "organization": {
                 "name": getattr(org, "name", "") if org else "",
                 "registration_type": getattr(org, "registration_type", "") if org else "",
-                "cin": getattr(org, "cin", None) if org else None,
-                "focus_sector": getattr(org, "focus_area", "") if org else "",
-                "poc_email": getattr(org, "poc_email", "") if org else "",
+                "cin": getattr(org, "cin_number", None) if org else None,
+                "focus_sector": getattr(org, "focus_sector", "") if org else "",
+                "poc_email": spo.email,
             },
             "assessments": BankSPODetailAssessmentSerializer(items, many=True).data,
             "email_placeholder": "",

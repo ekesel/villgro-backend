@@ -84,8 +84,14 @@ class QuestionAdminSerializer(serializers.ModelSerializer):
         """Generate a stable-ish code if not supplied."""
         if attrs.get("code"):
             return
-        sec = attrs.get("section") or getattr(getattr(self, "instance", None), "section", None)
-        sec_code = None
+        
+        instance = getattr(self, "instance", None)
+
+        if instance is not None and getattr(instance, "code", None):
+            return
+        
+        sec = attrs.get("section") or (getattr(instance, "section", None) if instance else None)
+        sec_code = getattr(sec, "code", None) or "Q"
         try:
             # section may be a PK or object
             sec_code = getattr(sec, "code", None) or str(sec)
@@ -122,15 +128,14 @@ class QuestionAdminSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         instance = getattr(self, "instance", None)
         q_type = attrs.get("type", getattr(instance, "type", None))
+
+        # Autogenerate code if omitted
+        self._autogenerate_code(attrs)
         code = attrs.get("code", getattr(instance, "code", None))
 
         options = self.initial_data.get("options", None)
         dimensions = self.initial_data.get("dimensions", None)
         conditions = self.initial_data.get("conditions", None)
-
-        # Autogenerate code if omitted
-        self._autogenerate_code(attrs)
-        code = attrs.get("code")
 
         # Code uniqueness
         if code:

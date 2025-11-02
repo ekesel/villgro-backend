@@ -51,7 +51,7 @@ class AssessmentFeedback(models.Model):
         COME_BACK_LATER    = "come_back_later",    "I will come back and complete it later"
         OTHER              = "other",              "Other"
 
-    assessment = models.OneToOneField(
+    assessment = models.ForeignKey(
         "assessments.Assessment",
         on_delete=models.CASCADE,
         related_name="feedback",

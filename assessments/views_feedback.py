@@ -1,12 +1,44 @@
 # assessments/views_feedback.py
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse, OpenApiExample
 from assessments.models import Assessment, AssessmentFeedback
 from assessments.serializers import AssessmentFeedbackSerializer
+
+@extend_schema(
+    tags=["SPO • Feedback"],
+    operation_id="feedback_meta",
+    summary="Feedback meta options",
+    description=(
+        "Returns the list of feedback reasons (key + label) sourced from "
+        "`AssessmentFeedback.Reason` choices. Use this to render the SPO feedback popup."
+    ),
+    responses={200: OpenApiResponse(description="OK")},
+    examples=[
+        OpenApiExample(
+            "Example",
+            value={
+                "reasons": [
+                    {"key": "hard_to_understand", "label": "Questions were difficult to understand"},
+                    {"key": "too_long", "label": "The questionnaire is too long"},
+                    {"key": "irrelevant", "label": "Questions were irrelevant"},
+                    {"key": "come_back_later", "label": "I will come back and complete it later"},
+                    {"key": "other", "label": "Other"},
+                ]
+            },
+            response_only=True,
+        )
+    ],
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def feedback_meta(request):
+    reasons = [{"key": key, "label": label} for key, label in AssessmentFeedback.Reason.choices]
+    return Response({"reasons": reasons}, status=200)
 
 class FeedbackView(APIView):
     permission_classes = [IsAuthenticated]
@@ -54,8 +86,20 @@ class FeedbackView(APIView):
         if not aid:
             return Response({"detail": "assessment_id is required"}, status=400)
         a = get_object_or_404(Assessment, pk=aid, organization=request.user.organization)
-        fb = getattr(a, "feedback", None)
+        fb = AssessmentFeedback.objects.filter(assessment=a).order_by("-created_at").first()
+
+        # if none exists, return an empty shape the frontend/test expects
         if not fb:
-            return Response({"detail": "No feedback found"}, status=404)
+            return Response(
+                {
+                    "assessment": a.id,
+                    "reasons": [],
+                    "comment": "",
+                    "created_at": None,
+                },
+                status=200,
+            )
+
+        # serialize a SINGLE instance (not the manager/queryset)
         ser = AssessmentFeedbackSerializer(fb, context={"request": request})
         return Response(ser.data, status=200)

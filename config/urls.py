@@ -38,7 +38,7 @@ from admin_portal.views_meta import (
     QuestionCodesMeta,
     OptionValuesMeta,
 )
-from assessments.views_feedback import FeedbackView
+from assessments.views_feedback import FeedbackView, feedback_meta
 from admin_portal.views_bank import BankAdminViewSet
 from admin_portal.views_spos import SPOAdminViewSet
 from admin_portal.views_dashboard import AdminDashboardSummaryView
@@ -113,6 +113,7 @@ urlpatterns = [
 
     # SPO feedback
     path("api/feedback", FeedbackView.as_view(), name="spo-feedback"),
+    path("api/feedback/meta", feedback_meta, name="feedback-meta"),
 
     #admin portal
     path("api/admin/meta/question-types/", QuestionTypesMeta.as_view(), name="admin-meta-question-types"),

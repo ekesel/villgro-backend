@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SPO Report</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #222; }
+    h1, h2, h3 { margin: 0 0 6px; }
+    .muted { color: #666; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
+    th { background: #f7f7f7; text-align: left; }
+    .header { display: flex; justify-content: space-between; align-items: baseline; }
+    .kvs div { margin: 2px 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>SPO Report</h1>
+    <div class="muted">Generated: {{ generated_at }}</div>
+  </div>
+
+  <h2>1. SPO</h2>
+  <div class="kvs">
+    <div><strong>ID:</strong> {{ spo.id }}</div>
+    <div><strong>Email:</strong> {{ spo.email }}</div>
+    <div><strong>Name:</strong> {{ spo.first_name }} {{ spo.last_name }}</div>
+    <div><strong>Status:</strong>
+      {% if spo.is_active %}Active{% else %}Inactive{% endif %}
+    </div>
+    <div><strong>Date Joined:</strong> {{ spo.date_joined }}</div>
+  </div>
+
+  <h2>2. Organization</h2>
+  <div class="kvs">
+    <div><strong>Name:</strong> {{ org.name }}</div>
+    <div><strong>Registration Type:</strong> {{ org.registration_type }}</div>
+    <div><strong>CIN:</strong> {{ org.cin|default:"-" }}</div>
+  </div>
+
+  <h2>3. Assessments & Eligibility</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Status</th>
+        <th>Started</th>
+        <th>Submitted</th>
+        <th>Scores</th>
+        <th>Eligibility</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in assessments %}
+        <tr>
+          <td>{{ a.id }}</td>
+          <td>{{ a.status }}</td>
+          <td>{{ a.started_at|default:"-" }}</td>
+          <td>{{ a.submitted_at|default:"-" }}</td>
+          <td>
+            <div>Overall: <strong>{{ a.scores.overall|default:0 }}</strong></div>
+            {% if a.scores.sections %}
+              {% for code, score in a.scores.sections.items %}
+                <div><strong>{{ code }}</strong>: {{ score }}</div>
+              {% endfor %}
+            {% endif %}
+          </td>
+          <td>
+            {# Try OneToOne first #}
+            {% if a.loaneligibilityresult %}
+              {% with elig=a.loaneligibilityresult %}
+                <div>Overall (elig): <strong>{{ elig.overall_score|floatformat:2 }}</strong></div>
+                <div>Decision:
+                  {% if elig.is_eligible %}<strong>Eligible</strong>{% else %}<strong>Ineligible</strong>{% endif %}
+                </div>
+                <div>Note: {{ elig.details.reason|default:"-" }}</div>
+              {% endwith %}
+            {% else %}
+              {# Fallback if relation is FK #}
+              {% with elig=a.loaneligibilityresult_set.first %}
+                {% if elig %}
+                  <div>Overall (elig): <strong>{{ elig.overall_score|floatformat:2 }}</strong></div>
+                  <div>Decision:
+                    {% if elig.is_eligible %}<strong>Eligible</strong>{% else %}<strong>Ineligible</strong>{% endif %}
+                  </div>
+                  <div>Note: {{ elig.details.reason|default:"-" }}</div>
+                {% else %}
+                  <em>No eligibility record</em>
+                {% endif %}
+              {% endwith %}
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6"><em>No assessments</em></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

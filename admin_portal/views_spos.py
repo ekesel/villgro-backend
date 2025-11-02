@@ -9,6 +9,14 @@ from admin_portal.serializers import (
 )
 from django.db.models import Q
 
+from django.http import HttpResponse
+from weasyprint import HTML
+from django.template.loader import render_to_string
+from django.utils.timezone import localtime
+from assessments.models import Assessment
+from questionnaires.models import LoanEligibilityResult
+from django.db.models import Prefetch
+
 User = get_user_model()
 
 @extend_schema(tags=["Admin • SPOs"])
@@ -159,3 +167,42 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
         user.is_active = not user.is_active
         user.save(update_fields=["is_active"])
         return Response(AdminSPOListSerializer(user).data)
+    
+    @action(detail=True, methods=["get"], url_path="report")
+    @extend_schema(
+        summary="Download SPO Report (PDF)",
+        description=(
+            "Admin-only PDF report for a specific SPO user, including:\n"
+            "- SPO and Organization details\n"
+            "- All Assessments (status, timestamps, section & overall scores)\n"
+            "- Loan eligibility results (score, decision, and notes)"
+        ),
+        responses={
+            200: OpenApiResponse(description="PDF binary"),
+            404: OpenApiResponse(description="SPO or Organization not found"),
+        },
+    )
+    def report(self, request, pk=None):
+        spo = self.get_object()
+        org = getattr(spo, "organization", None)
+        if not org:
+            return Response({"detail": "Organization not found for this SPO"}, status=status.HTTP_404_NOT_FOUND)
+
+        assessments = Assessment.objects.filter(organization=org).order_by("-submitted_at", "-started_at")
+        elig_map = {e.assessment_id: e for e in LoanEligibilityResult.objects.filter(assessment__in=assessments)}
+
+        html = render_to_string(
+            "admin_portal/spo_report.html",
+            {
+                "spo": spo,
+                "org": org,
+                "assessments": assessments,
+                "elig_map": elig_map,
+                "generated_at": localtime().strftime("%Y-%m-%d %H:%M"),
+            },
+        )
+
+        pdf_bytes = HTML(string=html).write_pdf()
+        resp = HttpResponse(pdf_bytes, content_type="application/pdf")
+        resp["Content-Disposition"] = f'attachment; filename="spo-report-{spo.id}.pdf"'
+        return resp

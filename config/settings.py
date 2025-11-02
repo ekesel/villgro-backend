@@ -320,18 +320,16 @@ LOGGING = {
             "propagate": False,
         },
 
-        # Your apps
+        # apps
         "assessments": {"handlers": ["assessments_file", "console"], "level": LOG_LEVEL, "propagate": False},
         "accounts": {"handlers": ["accounts_file", "console"], "level": LOG_LEVEL, "propagate": False},
         "admin_portal": {"handlers": ["admin_portal_file", "console"], "level": LOG_LEVEL, "propagate": False},
         "banks": {"handlers": ["banks_file", "console"], "level": LOG_LEVEL, "propagate": False},
         "organizations": {"handlers": ["organizations_file", "console"], "level": LOG_LEVEL, "propagate": False},
         "questionnaires": {"handlers": ["questionnaires_file", "console"], "level": LOG_LEVEL, "propagate": False},
-
-        # Emails (we used this in emails.py for abandoned assessment notice)
         "notifications": {"handlers": ["emails_file", "console"], "level": LOG_LEVEL, "propagate": False},
 
-        # Request/Response audit channel (used by middleware below)
+        # Request/Response audit channel (used by middleware)
         "http.audit": {"handlers": ["request_response_file"], "level": "INFO", "propagate": False},
     },
 }

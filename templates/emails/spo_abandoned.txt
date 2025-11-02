@@ -1,0 +1,12 @@
+Hi {{ spo.first_name|default:spo.email }},
+
+We noticed you paused your assessment for {{ org.name }}.
+Good news—we’ve saved your progress. You can continue anytime by logging back in.
+
+Assessment ID: {{ assessment.id }}
+Saved at: {{ recorded_at }}
+
+If you didn’t intend to pause, just pick up where you left off.
+
+Thanks,
+Support Team

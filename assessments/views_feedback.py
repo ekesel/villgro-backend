@@ -8,6 +8,10 @@ from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse, OpenApiExample
 from assessments.models import Assessment, AssessmentFeedback
 from assessments.serializers import AssessmentFeedbackSerializer
+from notifications.email import send_spo_abandoned_email
+import logging
+
+logger = logging.getLogger(__name__)
 
 @extend_schema(
     tags=["SPO • Feedback"],
@@ -71,6 +75,17 @@ class FeedbackView(APIView):
         ser = AssessmentFeedbackSerializer(
             inst, data=request.data, partial=True, context={"request": request}
         )
+
+        try:
+            if _ and a.status == "DRAFT":
+                send_spo_abandoned_email(
+                    spo=request.user,
+                    org=a.organization,
+                    assessment=a,
+                    recorded_at=inst.created_at,
+                )
+        except Exception as e:
+            logger.info("Failed to send SPO abandoned email for assessment %s: %s", a.id, e)
         ser.is_valid(raise_exception=True)
         ser.save(assessment=a)
         return Response(ser.data, status=status.HTTP_200_OK)

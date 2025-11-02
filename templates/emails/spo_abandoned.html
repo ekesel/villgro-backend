@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+  <body style="font-family: Arial, sans-serif; color:#222; font-size:14px;">
+    <p>Hi {{ spo.first_name|default:spo.email }},</p>
+    <p>We noticed you paused your assessment for <b>{{ org.name }}</b>.<br/>
+       Good news—<b>your progress is saved</b>. You can continue anytime by logging back in.</p>
+
+    <table cellpadding="6" cellspacing="0" style="border-collapse:collapse;">
+      <tr><td><b>Assessment ID</b></td><td>{{ assessment.id }}</td></tr>
+      <tr><td><b>Saved at</b></td><td>{{ recorded_at }}</td></tr>
+    </table>
+
+    <p style="margin-top:12px;">If you didn’t intend to pause, just pick up where you left off.</p>
+    <p>Thanks,<br/>Support Team</p>
+  </body>
+</html>

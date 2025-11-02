@@ -1,0 +1,1 @@
+You can resume your assessment (ID: {{ assessment.id }})

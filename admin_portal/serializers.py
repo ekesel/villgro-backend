@@ -239,6 +239,8 @@ class QuestionAdminSerializer(serializers.ModelSerializer):
         conds_in = self._normalized_conditions if hasattr(self, "_normalized_conditions") else validated_data.pop("conditions", None)
 
         for k, v in validated_data.items():
+            if k in ["options", "dimensions", "conditions"]:
+                continue
             setattr(instance, k, v)
         instance.save()
 

@@ -1,15 +1,17 @@
+import logging
+
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
+from django.http import Http404, HttpResponse
+from rest_framework.exceptions import ValidationError
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse, OpenApiExample
 from admin_portal.permissions import IsAdminRole
 from admin_portal.serializers import (
     AdminSPOListSerializer, AdminSPOCreateSerializer, AdminSPOUpdateSerializer
 )
 from django.db.models import Q
-
-from django.http import HttpResponse
 from weasyprint import HTML
 from django.template.loader import render_to_string
 from django.utils.timezone import localtime
@@ -18,6 +20,7 @@ from questionnaires.models import LoanEligibilityResult
 from django.db.models import Prefetch
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 @extend_schema(tags=["Admin • SPOs"])
 class SPOAdminViewSet(viewsets.ModelViewSet):
@@ -117,8 +120,28 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
     )
     def create(self, request, *args, **kwargs):
         ser = self.get_serializer(data=request.data)
-        ser.is_valid(raise_exception=True)
-        user = ser.save()
+        try:
+            ser.is_valid(raise_exception=True)
+        except ValidationError as exc:
+            logger.info("Admin SPO create validation failed for %s: %s", request.data.get("email"), exc.detail)
+            return Response(
+                {"message": "Please fix the highlighted fields.", "errors": exc.detail},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception:
+            logger.exception("Unexpected error validating SPO create payload")
+            return Response(
+                {"message": "We could not create the SPO right now. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        try:
+            user = ser.save()
+        except Exception:
+            logger.exception("Failed to create SPO user for %s", ser.validated_data.get("email"))
+            return Response(
+                {"message": "We could not create the SPO right now. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return Response(AdminSPOListSerializer(user).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(
@@ -134,7 +157,23 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
         responses={200: AdminSPOListSerializer, 400: OpenApiResponse(description="Validation error")},
     )
     def update(self, request, *args, **kwargs):
-        return super().update(request, *args, **kwargs)
+        try:
+            return super().update(request, *args, **kwargs)
+        except ValidationError as exc:
+            logger.info("Admin SPO update validation failed for %s: %s", kwargs.get(self.lookup_field), exc.detail)
+            return Response(
+                {"message": "Please fix the highlighted fields.", "errors": exc.detail},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Http404:
+            logger.info("SPO not found for update: %s", kwargs.get(self.lookup_field))
+            return Response({"message": "SPO not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception:
+            logger.exception("Failed to update SPO %s", kwargs.get(self.lookup_field))
+            return Response(
+                {"message": "We could not update the SPO right now. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @extend_schema(
         summary="Partial update SPO & Organization (PATCH)",
@@ -142,17 +181,50 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
         responses={200: AdminSPOListSerializer},
     )
     def partial_update(self, request, *args, **kwargs):
-        return super().partial_update(request, *args, **kwargs)
+        try:
+            return super().partial_update(request, *args, **kwargs)
+        except ValidationError as exc:
+            logger.info("Admin SPO partial update validation failed for %s: %s", kwargs.get(self.lookup_field), exc.detail)
+            return Response(
+                {"message": "Please fix the highlighted fields.", "errors": exc.detail},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Http404:
+            logger.info("SPO not found for partial update: %s", kwargs.get(self.lookup_field))
+            return Response({"message": "SPO not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception:
+            logger.exception("Failed to partially update SPO %s", kwargs.get(self.lookup_field))
+            return Response(
+                {"message": "We could not update the SPO right now. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @extend_schema(
         summary="Delete SPO (and its Organization)",
         responses={204: OpenApiResponse(description="Deleted"), 404: OpenApiResponse(description="Not found")},
     )
     def destroy(self, request, *args, **kwargs):
-        user = self.get_object()
-        if hasattr(user, "organization"):
-            user.organization.delete()
-        user.delete()
+        try:
+            user = self.get_object()
+        except Http404:
+            logger.info("SPO not found for delete: %s", kwargs.get(self.lookup_field))
+            return Response({"message": "SPO not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception:
+            logger.exception("Failed to fetch SPO for delete %s", kwargs.get(self.lookup_field))
+            return Response(
+                {"message": "We could not fetch the SPO right now. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        try:
+            if hasattr(user, "organization"):
+                user.organization.delete()
+            user.delete()
+        except Exception:
+            logger.exception("Failed to delete SPO %s", user.pk)
+            return Response(
+                {"message": "We could not delete the SPO right now. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["patch"], url_path="toggle-status")
@@ -163,9 +235,26 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
         examples=[OpenApiExample("Response", value={"id": 12, "is_active": False})],
     )
     def toggle_status(self, request, pk=None):
-        user = self.get_object()
-        user.is_active = not user.is_active
-        user.save(update_fields=["is_active"])
+        try:
+            user = self.get_object()
+        except Http404:
+            logger.info("SPO not found for toggle: %s", pk)
+            return Response({"message": "SPO not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception:
+            logger.exception("Failed to fetch SPO for toggle %s", pk)
+            return Response(
+                {"message": "We could not update the SPO right now. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        try:
+            user.is_active = not user.is_active
+            user.save(update_fields=["is_active"])
+        except Exception:
+            logger.exception("Failed to toggle status for SPO %s", user.pk)
+            return Response(
+                {"message": "We could not update the SPO right now. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return Response(AdminSPOListSerializer(user).data)
     
     @action(detail=True, methods=["get"], url_path="report")
@@ -183,26 +272,51 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
         },
     )
     def report(self, request, pk=None):
-        spo = self.get_object()
+        try:
+            spo = self.get_object()
+        except Http404:
+            logger.info("SPO not found for report: %s", pk)
+            return Response({"message": "SPO not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception:
+            logger.exception("Failed to fetch SPO for report %s", pk)
+            return Response(
+                {"message": "We could not generate the report right now. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         org = getattr(spo, "organization", None)
         if not org:
+            logger.info("Organization missing for SPO %s during report generation", spo.pk)
             return Response({"detail": "Organization not found for this SPO"}, status=status.HTTP_404_NOT_FOUND)
 
-        assessments = Assessment.objects.filter(organization=org).order_by("-submitted_at", "-started_at")
-        elig_map = {e.assessment_id: e for e in LoanEligibilityResult.objects.filter(assessment__in=assessments)}
+        try:
+            assessments = Assessment.objects.filter(organization=org).order_by("-submitted_at", "-started_at")
+            elig_map = {e.assessment_id: e for e in LoanEligibilityResult.objects.filter(assessment__in=assessments)}
+        except Exception:
+            logger.exception("Failed to collect assessment data for SPO %s", spo.pk)
+            return Response(
+                {"message": "We could not generate the report right now. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-        html = render_to_string(
-            "admin_portal/spo_report.html",
-            {
-                "spo": spo,
-                "org": org,
-                "assessments": assessments,
-                "elig_map": elig_map,
-                "generated_at": localtime().strftime("%Y-%m-%d %H:%M"),
-            },
-        )
+        try:
+            html = render_to_string(
+                "admin_portal/spo_report.html",
+                {
+                    "spo": spo,
+                    "org": org,
+                    "assessments": assessments,
+                    "elig_map": elig_map,
+                    "generated_at": localtime().strftime("%Y-%m-%d %H:%M"),
+                },
+            )
+            pdf_bytes = HTML(string=html).write_pdf()
+        except Exception:
+            logger.exception("Failed to render PDF report for SPO %s", spo.pk)
+            return Response(
+                {"message": "We could not generate the report right now. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-        pdf_bytes = HTML(string=html).write_pdf()
         resp = HttpResponse(pdf_bytes, content_type="application/pdf")
         resp["Content-Disposition"] = f'attachment; filename="spo-report-{spo.id}.pdf"'
         return resp

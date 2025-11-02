@@ -87,6 +87,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'admin_portal.middleware.RequestResponseLoggingMiddleware', 
     'admin_portal.middleware.RequestActivityMiddleware',
 ]
 
@@ -175,12 +176,162 @@ STATIC_URL = "/django-static/"
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
-EMAIL_HOST = os.getenv("EMAIL_HOST", "")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
-EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@villgro.local")
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.mailgun.org")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "postmaster@YOUR_DOMAIN.mailgun.org")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "YOUR_MAILGUN_SMTP_PASSWORD")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@YOUR_DOMAIN")
+
+LOG_DIR = BASE_DIR / "logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 ASSESSMENT_COOLDOWN_DAYS = 180
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "request_id": {
+            "()": "django.utils.log.CallbackFilter",
+            "callback": lambda record: True,  # stub; replace if you add real request-id context
+        }
+    },
+    "formatters": {
+        "simple": {
+            "format": "[{levelname}] {asctime} {name}: {message}",
+            "style": "{",
+        },
+        "json": {
+            "format": '{{"ts":"{asctime}","lvl":"{levelname}","logger":"{name}","msg":"{message}"}}',
+            "style": "{",
+        },
+        "access": {  # for request/response lines
+            "format": "[{levelname}] {asctime} {name} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        # Console (keep for dev)
+        "console": {
+            "level": LOG_LEVEL,
+            "class": "logging.StreamHandler",
+            "formatter": "simple",
+        },
+
+        # --- Django core logs ---
+        "django_file": {
+            "level": LOG_LEVEL,
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": str(LOG_DIR / "django.log"),
+            "maxBytes": 5_000_000,
+            "backupCount": 5,
+            "formatter": "json",
+        },
+        "django_request_file": {
+            "level": "WARNING",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": str(LOG_DIR / "django_request.log"),
+            "maxBytes": 5_000_000,
+            "backupCount": 5,
+            "formatter": "json",
+        },
+
+        # --- App-specific logs ---
+        "assessments_file": {
+            "level": LOG_LEVEL,
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": str(LOG_DIR / "assessments.log"),
+            "maxBytes": 5_000_000,
+            "backupCount": 5,
+            "formatter": "json",
+        },
+        "accounts_file": {
+            "level": LOG_LEVEL,
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": str(LOG_DIR / "accounts.log"),
+            "maxBytes": 5_000_000,
+            "backupCount": 5,
+            "formatter": "json",
+        },
+        "admin_portal_file": {
+            "level": LOG_LEVEL,
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": str(LOG_DIR / "admin_portal.log"),
+            "maxBytes": 5_000_000,
+            "backupCount": 5,
+            "formatter": "json",
+        },
+        "banks_file": {
+            "level": LOG_LEVEL,
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": str(LOG_DIR / "banks.log"),
+            "maxBytes": 5_000_000,
+            "backupCount": 5,
+            "formatter": "json",
+        },
+        "organizations_file": {
+            "level": LOG_LEVEL,
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": str(LOG_DIR / "organizations.log"),
+            "maxBytes": 5_000_000,
+            "backupCount": 5,
+            "formatter": "json",
+        },
+        "questionnaires_file": {
+            "level": LOG_LEVEL,
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": str(LOG_DIR / "questionnaires.log"),
+            "maxBytes": 5_000_000,
+            "backupCount": 5,
+            "formatter": "json",
+        },
+        "emails_file": {
+            "level": LOG_LEVEL,
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": str(LOG_DIR / "notifications.log"),
+            "maxBytes": 5_000_000,
+            "backupCount": 5,
+            "formatter": "json",
+        },
+
+        # --- Request/Response audit log ---
+        "request_response_file": {
+            "level": "INFO",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": str(LOG_DIR / "request_response.log"),
+            "maxBytes": 10_000_000,
+            "backupCount": 10,
+            "formatter": "access",
+        },
+    },
+    "loggers": {
+        # Django
+        "django": {
+            "handlers": ["django_file", "console"],
+            "level": LOG_LEVEL,
+            "propagate": True,
+        },
+        "django.request": {
+            "handlers": ["django_request_file", "console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+
+        # Your apps
+        "assessments": {"handlers": ["assessments_file", "console"], "level": LOG_LEVEL, "propagate": False},
+        "accounts": {"handlers": ["accounts_file", "console"], "level": LOG_LEVEL, "propagate": False},
+        "admin_portal": {"handlers": ["admin_portal_file", "console"], "level": LOG_LEVEL, "propagate": False},
+        "banks": {"handlers": ["banks_file", "console"], "level": LOG_LEVEL, "propagate": False},
+        "organizations": {"handlers": ["organizations_file", "console"], "level": LOG_LEVEL, "propagate": False},
+        "questionnaires": {"handlers": ["questionnaires_file", "console"], "level": LOG_LEVEL, "propagate": False},
+
+        # Emails (we used this in emails.py for abandoned assessment notice)
+        "notifications": {"handlers": ["emails_file", "console"], "level": LOG_LEVEL, "propagate": False},
+
+        # Request/Response audit channel (used by middleware below)
+        "http.audit": {"handlers": ["request_response_file"], "level": "INFO", "propagate": False},
+    },
+}

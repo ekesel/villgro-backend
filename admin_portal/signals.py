@@ -1,3 +1,5 @@
+import logging
+
 from django.db.models.signals import pre_save, post_save, post_delete, m2m_changed, post_migrate
 from django.dispatch import receiver
 from django.db import models
@@ -8,6 +10,8 @@ from django.db import connection
 from django.conf import settings
 from django.db.utils import OperationalError, ProgrammingError
 from django.utils.functional import Promise
+
+logger = logging.getLogger(__name__)
 
 
 AUDIT_READY = False  # flipped to True after all migrations
@@ -27,6 +31,7 @@ def _safe_actor():
                 return None
         return actor
     except Exception:
+        logger.exception("Failed to resolve safe actor")
         return None
 
 def _table_exists(table: str) -> bool:
@@ -59,12 +64,14 @@ def _db_ready() -> bool:
 
         return True
     except Exception:
+        logger.exception("Database readiness check failed")
         return False
 
 def _should_log_sender(sender) -> bool:
     try:
         app_label = sender._meta.app_label
     except Exception:
+        logger.exception("Failed to resolve app label for sender %s", sender)
         return False
     # Skip Django/framework/system apps
     if app_label in {
@@ -93,6 +100,7 @@ def _field_verbose(instance, field_name):
         v = instance._meta.get_field(field_name).verbose_name or field_name
         return str(v)  # <-- ensure no __proxy__ leaks into JSON
     except Exception:
+        logger.exception("Failed to resolve verbose name for field %s on %s", field_name, instance)
         return field_name
     
 def _json_safe(value):
@@ -117,6 +125,7 @@ def _serialize_value(instance, field_name, value):
         if isinstance(field, (models.ForeignKey, models.OneToOneField)):
             return _json_safe(str(value) if value is not None else None)
     except Exception:
+        logger.exception("Failed to serialize field %s on %s", field_name, instance)
         pass
     return _json_safe(value)
 
@@ -134,6 +143,7 @@ def _snapshot(instance):
                 val = getattr(instance, name)
                 data[name] = _serialize_value(instance, name, val)
             except Exception:
+                logger.exception("Failed to snapshot field %s on %s", name, instance)
                 pass
     return data
 
@@ -152,6 +162,7 @@ def capture_pre_save(sender, instance, **kwargs):
             if old:
                 setattr(instance, _PREVIOUS_STATE_ATTR, _snapshot(old))
     except Exception:
+        logger.exception("Failed to capture pre-save snapshot for %s", instance)
         pass
 
 @receiver(post_save)
@@ -217,6 +228,7 @@ def log_post_save(sender, instance, created, **kwargs):
                     help_text=help_text,
                 )
     except Exception:
+        logger.exception("Failed to log post-save activity for %s", instance)
         pass
     finally:
         # cleanup snapshot to avoid leaking on instance
@@ -234,6 +246,7 @@ def log_post_delete(sender, instance, **kwargs):
         if sender is User:
             return
     except Exception:
+        logger.exception("Failed to determine if actor matches deleted user")
         pass
 
     try:
@@ -258,6 +271,7 @@ def log_post_delete(sender, instance, **kwargs):
             help_text=f"Deleted {app_label}.{model} “{_short_repr(instance)}”.",
         )
     except Exception:
+        logger.exception("Failed to log post-delete activity for %s", instance)
         pass
 
 @receiver(m2m_changed)
@@ -294,6 +308,7 @@ def log_m2m(sender, instance, action, reverse, model, pk_set, **kwargs):
             help_text=help_text,
         )
     except Exception:
+        logger.exception("Failed to log m2m activity for %s", instance)
         pass
 
 def _request_meta(req):

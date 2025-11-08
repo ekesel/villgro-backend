@@ -114,7 +114,7 @@ class QuestionSerializer(serializers.ModelSerializer):
         return obj.code in control_set
 
     def get_dimensions(self, obj):
-        if obj.type == "MULTI_SLIDER":
+        if obj and obj.dimensions.exists():
             return [
                 {
                     "code": d.code,
@@ -126,7 +126,7 @@ class QuestionSerializer(serializers.ModelSerializer):
                 }
                 for d in obj.dimensions.all()
             ]
-        return None
+        return []
 
     # ---- Computed bounds without changing models ----
     def get_min(self, obj):

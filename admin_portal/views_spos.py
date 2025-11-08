@@ -17,7 +17,7 @@ from django.template.loader import render_to_string
 from django.utils.timezone import localtime
 from assessments.models import Assessment
 from questionnaires.models import LoanEligibilityResult
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Max, Case, When, IntegerField
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -85,13 +85,54 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                     "phone": "9876543210",
                     "is_active": True,
                     "date_joined": "2025-10-01T10:15:00Z",
+                    "loan_eligible": True,
                     "organization": {"id": 7, "name": "GreenTech Pvt", "registration_type": "PRIVATE_LTD"}
                 }]
             )
         ],
     )
-    def list(self, *args, **kwargs):
-        return super().list(*args, **kwargs)
+    def list(self, request, *args, **kwargs):
+        """
+        Enrich paginated list with 'loan_eligible' computed flag:
+        True if ANY LoanEligibilityResult for this SPO's organization is eligible.
+        """
+        response = super().list(request, *args, **kwargs)
+
+        # response.data can be paginated dict with 'results' or a plain list
+        if isinstance(response.data, dict) and "results" in response.data:
+            items = response.data["results"]
+        else:
+            items = response.data
+
+        # Collect SPO user ids present on the page
+        user_ids = [it.get("id") for it in items if isinstance(it, dict) and it.get("id")]
+
+        if user_ids:
+            # Aggregate any eligible result per SPO (via their organization.created_by_id)
+            agg = (
+                LoanEligibilityResult.objects
+                .filter(assessment__organization__created_by_id__in=user_ids)
+                .values("assessment__organization__created_by_id")
+                .annotate(
+                    any_eligible=Max(
+                        Case(
+                            When(is_eligible=True, then=1),
+                            default=0,
+                            output_field=IntegerField()
+                        )
+                    )
+                )
+            )
+            elig_map = {row["assessment__organization__created_by_id"]: bool(row["any_eligible"]) for row in agg}
+        else:
+            elig_map = {}
+
+        # Inject the flag per row (default False)
+        for it in items:
+            uid = it.get("id")
+            it["loan_eligible"] = bool(elig_map.get(uid, False))
+
+        return response
 
     @extend_schema(
         summary="Create SPO (user + organization)",
@@ -256,7 +297,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(AdminSPOListSerializer(user).data)
-    
+
     @action(detail=True, methods=["get"], url_path="report")
     @extend_schema(
         summary="Download SPO Report (PDF)",
@@ -320,7 +361,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
         resp = HttpResponse(pdf_bytes, content_type="application/pdf")
         resp["Content-Disposition"] = f'attachment; filename="spo-report-{spo.id}.pdf"'
         return resp
-    
+
     @action(detail=True, methods=["get"], url_path="assessments")
     @extend_schema(
         summary="List assessments for a specific SPO (Admin)",

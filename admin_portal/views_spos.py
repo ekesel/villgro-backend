@@ -320,3 +320,115 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
         resp = HttpResponse(pdf_bytes, content_type="application/pdf")
         resp["Content-Disposition"] = f'attachment; filename="spo-report-{spo.id}.pdf"'
         return resp
+    
+    @action(detail=True, methods=["get"], url_path="assessments")
+    @extend_schema(
+        summary="List assessments for a specific SPO (Admin)",
+        description=(
+            "Returns all assessments belonging to the SPO's Organization. "
+            "Includes status, timestamps, section/overall scores, matched loan instrument (from eligibility), "
+            "and eligibility decision."
+        ),
+        responses={
+            200: OpenApiResponse(description="List of assessments for the SPO’s organization"),
+            404: OpenApiResponse(description="SPO or Organization not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Assessments list (truncated)",
+                value=[
+                    {
+                        "id": 123,
+                        "status": "SUBMITTED",
+                        "started_at": "2025-09-24T10:30:00Z",
+                        "submitted_at": "2025-09-24T11:05:00Z",
+                        "scores": {
+                            "overall": 76.5,
+                            "sections": {"IMPACT": 79.0, "RISK": 72.0, "RETURN": 78.0}
+                        },
+                        "instrument": {"id": 4, "name": "Commercial Debt with Impact…"},
+                        "eligibility": {
+                            "is_eligible": True,
+                            "overall_score": 72.0,
+                            "reason": None
+                        }
+                    }
+                ],
+                response_only=True,
+            )
+        ],
+    )
+    def assessments(self, request, pk=None):
+        """
+        Drives the Admin • SPO Detail > Assessment Summary table.
+        GET /api/admin/spos/{spo_id}/assessments/
+        """
+        try:
+            spo = self.get_object()
+        except Http404:
+            logger.info("SPO not found for assessments: %s", pk)
+            return Response({"detail": "SPO not found."}, status=404)
+        except Exception:
+            logger.exception("Failed to fetch SPO for assessments %s", pk)
+            return Response({"detail": "Unable to fetch SPO."}, status=500)
+
+        org = getattr(spo, "organization", None)
+        if not org:
+            logger.info("Organization not found for SPO %s when listing assessments", pk)
+            return Response({"detail": "Organization not found."}, status=404)
+
+        try:
+            # Pull assessments for org
+            qs = (
+                Assessment.objects
+                .filter(organization=org)
+                .order_by("-submitted_at", "-started_at")
+            )
+
+            # Eligibility map (with instrument on the eligibility)
+            elig_qs = (
+                LoanEligibilityResult.objects
+                .select_related("matched_instrument")
+                .filter(assessment__in=qs)
+            )
+            elig_map = {e.assessment_id: e for e in elig_qs}
+
+            data = []
+            for a in qs:
+                s = a.scores or {}
+                sections = (s.get("sections") or {})
+                elig = elig_map.get(a.id)
+                inst = getattr(elig, "matched_instrument", None) if elig else None
+
+                data.append({
+                    "id": a.id,
+                    "status": a.status,
+                    "started_at": a.started_at,
+                    "submitted_at": a.submitted_at,
+                    "scores": {
+                        "overall": s.get("overall", 0),
+                        "sections": {
+                            "IMPACT": sections.get("IMPACT", 0),
+                            "RISK": sections.get("RISK", 0),
+                            "RETURN": sections.get("RETURN", 0),
+                        },
+                    },
+                    "instrument": (
+                        {"id": getattr(inst, "id", None), "name": getattr(inst, "name", None)}
+                        if inst else None
+                    ),
+                    "eligibility": (
+                        {
+                            "is_eligible": bool(getattr(elig, "is_eligible", False)),
+                            "overall_score": getattr(elig, "overall_score", None),
+                            "reason": (getattr(elig, "details", {}) or {}).get("reason")
+                                      if getattr(elig, "details", None) else None,
+                        }
+                        if elig else None
+                    ),
+                })
+        except Exception:
+            logger.exception("Failed to build assessment list for SPO %s", pk)
+            return Response({"detail": "Unable to list assessments."}, status=500)
+
+        return Response(data, status=200)

@@ -195,7 +195,7 @@ class AdminDashboardSummaryView(APIView):
 
         # ---------- Recent activity (empty per SOW for now) ----------
         recent_activity: List[Dict[str, Any]] = []
-        recent = ActivityLog.objects.order_by("-created_at")[:10]
+        recent = ActivityLog.objects.exclude(action="API_HIT").order_by("-created_at")[:10]
         if len(recent) > 0:
             recent_activity = [{
                 "id": r.id,

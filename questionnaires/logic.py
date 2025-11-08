@@ -151,13 +151,157 @@ def _load_section_rules() -> Dict[str, EligibilityRule]:
     return rules
 
 
-def _pick_instrument(overall_score: Decimal, details: Dict) -> LoanInstrument | None:
+def _pick_instrument(
+    overall_score: Decimal,
+    details: Dict,
+    *,
+    stage: str | None = None,
+) -> LoanInstrument | None:
     """
-    Optional: choose an instrument based on score bands.
-    Replace with your product logic later. For now, leave None
-    or implement simple tiering.
+    Choose a LoanInstrument name based on Impact, Risk, Return bands.
+    Stage is *not* enforced for eligibility; it is only recorded in the
+    created instrument's description for traceability.
+
+    Returns a LoanInstrument (created if missing) or None if no rule matches.
     """
-    return None
+    from questionnaires.models import LoanInstrument  # local import to avoid cycles
+
+    # ----- helpers -----
+    def get_norm(code: str) -> float:
+        sec = (details.get("sections") or {}).get(code, {})
+        try:
+            return float(sec.get("normalized", 0))
+        except Exception:
+            return 0.0
+
+    def in_range(v: float, lo: float, hi: float) -> bool:
+        return lo <= v <= hi
+
+    I = get_norm("IMPACT")
+    R = get_norm("RISK")
+    Ret = get_norm("RETURN")
+
+    impact_band = lambda lo, hi: in_range(I, lo, hi)
+    risk_band   = lambda lo, hi: in_range(R, lo, hi)
+    return_low  = lambda: in_range(Ret, 0, 33)
+    return_mid  = lambda: in_range(Ret, 34, 66)
+    return_high = lambda: in_range(Ret, 67, 100)
+
+    name: str | None = None
+
+    # -------- High return (67–100) --------
+    if return_high():
+        if impact_band(0, 20):
+            if risk_band(0, 20):
+                name = "Commercial debt"
+            elif risk_band(21, 40):
+                name = "Commercial debt / Equity"
+            else:  # 41–100
+                name = "Commercial equity"
+        elif impact_band(21, 40):
+            if risk_band(0, 40):
+                name = "Commercial debt / Impact Linked financing"
+            else:
+                name = "Commercial equity"
+        elif impact_band(41, 60):
+            if risk_band(0, 40):
+                name = "Commercial debt / Impact Linked financing"
+            else:
+                name = "Guarantee backed debt with TA"
+        elif impact_band(61, 80):
+            if risk_band(0, 40):
+                name = "Commercial debt with impact linked incentives"
+            elif risk_band(41, 60):
+                name = "Guarantee backed debt with TA"
+            elif risk_band(61, 80):
+                name = "Subordinate / concessional equity / Convertible Note"
+            else:
+                name = "Returnable Grant"
+        elif impact_band(81, 100):
+            if risk_band(0, 40):
+                name = "Commercial debt with impact linked incentives"
+            elif risk_band(41, 60):
+                name = "Debt linked instrument like convertible note"
+            elif risk_band(61, 80):
+                name = "Returnable Grant"
+            else:
+                name = "Grant"
+
+    # -------- Mid return (34–66) --------
+    if name is None and return_mid():
+        if impact_band(0, 20):
+            name = "Commercial Debt"
+        elif impact_band(21, 40):
+            if risk_band(0, 40):
+                name = "Commercial debt  with impact linked financing like interest subvention"
+            else:
+                name = "Debt linked instrument like convertible note"
+        elif impact_band(41, 60):
+            if risk_band(0, 40):
+                name = "Commercial debt / equity - Impact linked incentives"
+            else:
+                name = "Guarantee backed debt with TA"
+        elif impact_band(61, 80):
+            if risk_band(0, 40):
+                name = "Commercial debt with impact linked incentives"
+            elif risk_band(41, 80):
+                name = "Concessional debt / Guarantee backed debt"
+            else:
+                name = "Returnable Grant"
+        elif impact_band(81, 100):
+            if risk_band(0, 20):
+                name = "Commercial debt with impact linked incentives"
+            elif risk_band(21, 40):
+                name = "Guarantee backed debt"
+            elif risk_band(41, 60):
+                name = "Debt linked instrument like convertible note"
+            elif risk_band(61, 80):
+                name = "Guarantee backed debt with TA"
+            else:
+                name = "Returnable Grant"
+
+    # -------- Low return (0–33) --------
+    if name is None and return_low():
+        if impact_band(0, 20):
+            name = "Commercial debt"
+        elif impact_band(21, 40):
+            if risk_band(0, 40):
+                name = "Commercial debt  with impact linked financing like interest subvention"
+            else:
+                name = "Guarantee backed debt with impact linked interest subvention"
+        elif impact_band(41, 60):
+            if risk_band(0, 40):
+                name = "Commercial debt  with impact linked financing like interest subvention"
+            else:
+                name = "Guarantee backed debt with impact linked interest subvention"
+        elif impact_band(61, 80):
+            if risk_band(0, 40):
+                name = "Concessional debt"
+            elif risk_band(41, 80):
+                name = "Guarantee backed debt with impact linked interest subvention"
+            else:
+                name = "Returnable Grant"
+        elif impact_band(81, 100):
+            if risk_band(0, 20):
+                name = "Debt with Impact linked interest subvention"
+            elif risk_band(21, 40):
+                name = "Guarantee backed Debt with Impact linked interest subvention"
+            elif risk_band(41, 60):
+                name = "Debt linked instrument like convertible note"
+            elif risk_band(61, 80):
+                name = "Returnable Grant"
+            else:
+                name = "Grant"
+
+    if not name:
+        return None
+
+    stage_str = (stage or "").upper()
+    inst, _ = LoanInstrument.objects.get_or_create(
+        name=name,
+        defaults={"description": f"Auto-mapped for Impact={I:.0f}, Risk={R:.0f}, Return={Ret:.0f}, Stage={stage_str or '-'}"}
+    )
+    return inst
 
 
 @transaction.atomic
@@ -259,7 +403,11 @@ def eligibility_check(assessment: Assessment, *, overall_threshold: Decimal = DE
         elif overall_score < overall_threshold:
             details["reason"] = f"Overall score below threshold {overall_threshold}."
 
-    instrument = _pick_instrument(overall_score, details)
+    org_stage = getattr(getattr(assessment, "organization", None), "org_stage", None)
+    stage_str = (str(org_stage) if org_stage is not None else "").upper()
+    details["stage"] = stage_str
+    
+    instrument = _pick_instrument(overall_score, details, stage=stage_str)
 
     # Persist & return
     obj, _ = LoanEligibilityResult.objects.update_or_create(

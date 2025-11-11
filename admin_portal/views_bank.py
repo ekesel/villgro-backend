@@ -80,7 +80,78 @@ class BankAdminViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
-    @extend_schema(summary="Create bank", responses={201: BankAdminSerializer})
+    @extend_schema(
+        summary="Create bank (also creates linked BANK_USER)",
+        description=(
+            "Creates a Bank and a linked BANK_USER.\n\n"
+            "**User mapping**:\n"
+            "- BANK_USER.email ← `contact_email`\n"
+            "- BANK_USER.first_name ← `contact_person`\n"
+            "- BANK_USER.phone ← `contact_phone`\n"
+            "- BANK_USER.password ← `password` (write-only)\n"
+        ),
+        request={
+            "type": "object",
+            "required": ["name", "contact_email", "password"],
+            "properties": {
+                "name": {"type": "string", "example": "Acme Bank"},
+                "contact_person": {"type": "string", "example": "Jane Doe"},
+                "contact_email": {"type": "string", "format": "email", "example": "ops@acmebank.com"},
+                "contact_phone": {"type": "string", "example": "9876543210"},
+                "status": {
+                    "type": "string",
+                    "enum": ["ACTIVE", "INACTIVE"],
+                    "default": "ACTIVE"
+                },
+                "notes": {"type": "string", "example": "North region partner"},
+                "password": {
+                    "type": "string",
+                    "writeOnly": True,
+                    "description": "Password for the created BANK_USER (mapped from payload).",
+                    "example": "StrongPass123!"
+                }
+            }
+        },
+        responses={
+            201: OpenApiResponse(
+                description="Created",
+                response=BankAdminSerializer,
+                examples=[
+                    OpenApiExample(
+                        "Create response (truncated)",
+                        value={
+                            "id": 7,
+                            "name": "Acme Bank",
+                            "contact_person": "Jane Doe",
+                            "contact_email": "ops@acmebank.com",
+                            "contact_phone": "9876543210",
+                            "status": "ACTIVE",
+                            "notes": "North region partner",
+                            "created_at": "2025-11-11T08:10:00Z",
+                            "updated_at": "2025-11-11T08:10:00Z"
+                        },
+                        response_only=True,
+                    )
+                ],
+            ),
+            400: OpenApiResponse(description="Validation error (e.g., weak password or duplicate contact_email as user)"),
+        },
+        examples=[
+            OpenApiExample(
+                "Create bank + BANK_USER",
+                value={
+                    "name": "Acme Bank",
+                    "contact_person": "Jane Doe",
+                    "contact_email": "bank.ops@acmebank.com",
+                    "contact_phone": "9876543210",
+                    "status": "ACTIVE",
+                    "notes": "North region partner",
+                    "password": "StrongPass123!"
+                },
+                request_only=True,
+            )
+        ],
+    )
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 

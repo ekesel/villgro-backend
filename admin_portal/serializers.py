@@ -258,14 +258,44 @@ class QuestionAdminSerializer(serializers.ModelSerializer):
         return instance
     
 class BankAdminSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=True)
     class Meta:
         model = Bank
         fields = [
             "id", "name", "contact_person", "contact_email",
             "contact_phone", "status", "notes",
-            "created_at", "updated_at",
+            "created_at", "updated_at", "password",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_contact_email(self, v):
+        if User.objects.filter(email__iexact=v).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return v
+
+    def validate_password(self, v):
+        validate_password(v)
+        return v
+
+    def create(self, validated_data):
+        # pop user fields
+        user_email = validated_data.get("contact_email", "")
+        user_password = validated_data.pop("password")
+        user_first_name = validated_data.get("contact_person", "")
+        user_phone = validated_data.get("contact_phone", "")
+
+        # 1) create BANK_USER
+        user = User.objects.create_user(
+            email=user_email,
+            password=user_password,
+            role=User.Role.BANK_USER,
+            first_name=user_first_name,
+            phone=user_phone,
+        )
+
+        # 2) create Bank and link user
+        bank = Bank.objects.create(user=user, **validated_data)
+        return bank
 
 class AdminSPOOrgSerializer(serializers.ModelSerializer):
     class Meta:

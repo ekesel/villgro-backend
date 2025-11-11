@@ -28,6 +28,7 @@ def test_bank_crud_happy_path():
         "contact_phone": "9999999999",
         "status": "ACTIVE",
         "notes": "Preferred partner",
+        "password": "SecurePass123!"
     }
     r = client.post("/api/admin/banks/", payload, format="json")
     assert r.status_code == 201, r.content
@@ -69,13 +70,13 @@ def test_bank_crud_happy_path():
 def test_unique_name_validation_and_ordering():
     client = _login_admin()
 
-    r1 = client.post("/api/admin/banks/", {"name": "Zeta Bank"}, format="json")
+    r1 = client.post("/api/admin/banks/", {"name": "Zeta Bank Alpha", "status": "ACTIVE", "password": "Kt6uqn0kss", "contact_email": "test@agmil.com"}, format="json")
     assert r1.status_code == 201
-    r2 = client.post("/api/admin/banks/", {"name": "Alpha Bank"}, format="json")
+    r2 = client.post("/api/admin/banks/", {"name": "Alpha Bank Alpha", "status": "ACTIVE", "password": "Kt6uqn0kss", "contact_email": "test@gmil.com"}, format="json")
     assert r2.status_code == 201
 
     # Unique constraint (same name)
-    dup = client.post("/api/admin/banks/", {"name": "Alpha Bank"}, format="json")
+    dup = client.post("/api/admin/banks/", {"name": "Alpha Bank Alpha", "status": "ACTIVE", "password": "Kt6uqn0kss", "contact_email": "test@gmil.com"}, format="json")
     assert dup.status_code in (400, 409)
 
     # Ordering

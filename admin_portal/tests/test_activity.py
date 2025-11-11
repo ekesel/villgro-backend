@@ -6,14 +6,14 @@ from admin_portal.models import ActivityLog
 @pytest.mark.django_db
 @pytest.mark.audit_signals
 def test_activity_create_update_delete_and_filters():
-    admin = User.objects.create_user(email="admin@x.com", password="pass", role=User.Role.ADMIN, is_staff=True)
+    admin = User.objects.create_user(email="admin@x.com", password="Kt6uqn0kss#", role=User.Role.ADMIN, is_staff=True)
     c = APIClient()
-    assert c.post("/api/auth/login/", {"email":"admin@x.com","password":"pass"}, format="json").status_code == 200
-    token = c.post("/api/auth/login/", {"email":"admin@x.com","password":"pass"}, format="json").data["access"]
+    assert c.post("/api/auth/login/", {"email":"admin@x.com","password":"Kt6uqn0kss#"}, format="json").status_code == 200
+    token = c.post("/api/auth/login/", {"email":"admin@x.com","password":"Kt6uqn0kss#"}, format="json").data["access"]
     c.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
 
     # CREATE via API
-    r1 = c.post("/api/admin/banks/", {"name": "State Bank Alpha", "status": "ACTIVE"}, format="json")
+    r1 = c.post("/api/admin/banks/", {"name": "State Bank Alpha", "status": "ACTIVE", "password": "Kt6uqn0kss", "contact_email": "test@gmil.com"}, format="json")
     assert r1.status_code == 201, r1.content
     bank_id = r1.json()["id"]
 

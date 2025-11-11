@@ -1,5 +1,5 @@
 import pytest
-from django.contrib.auth import get_user_model
+from accounts.models import User
 from django.core.management import call_command
 from pathlib import Path
 from rest_framework.test import APIClient
@@ -7,11 +7,9 @@ from organizations.models import Organization
 from django.db.models.signals import post_save, post_delete, pre_save, m2m_changed
 from admin_portal import signals as audit_signals
 
-User = get_user_model()
 
 @pytest.fixture
 def user(db):
-    User = get_user_model()
     return User.objects.create_user(username="tester", password="pass1234")
 
 @pytest.fixture(scope="session", autouse=True)

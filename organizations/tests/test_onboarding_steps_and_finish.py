@@ -1,9 +1,7 @@
 import pytest
 from rest_framework.test import APIClient
-from django.contrib.auth import get_user_model
 from organizations.models import Organization, OnboardingProgress
-
-User = get_user_model()
+from accounts.models import User
 
 @pytest.mark.django_db
 def test_step2_step3_and_finish_flow():

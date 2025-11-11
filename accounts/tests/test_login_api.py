@@ -1,9 +1,7 @@
 import pytest
-from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from organizations.models import OnboardingProgress
-
-User = get_user_model()
+from accounts.models import User
 
 @pytest.mark.django_db
 def test_login_returns_tokens_user_and_onboarding_flags():

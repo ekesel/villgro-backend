@@ -1,5 +1,5 @@
 import pytest
-from django.contrib.auth import get_user_model
+from accounts.models import User
 from rest_framework.test import APIClient
 
 @pytest.mark.django_db
@@ -10,7 +10,6 @@ def test_feedback_meta_requires_auth():
 
 @pytest.mark.django_db
 def test_feedback_meta_happy_path():
-    User = get_user_model()
     u = User.objects.create_user(email="spo@x.com", password="Pass123!", role=User.Role.SPO)
 
     c = APIClient()

@@ -1,8 +1,6 @@
 import pytest
 from rest_framework.test import APIClient
-from django.contrib.auth import get_user_model
-
-User = get_user_model()
+from accounts.models import User
 
 @pytest.mark.django_db
 def test_logout_blacklists_refresh_token():

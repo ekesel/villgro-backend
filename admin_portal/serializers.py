@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.db import transaction
-from django.contrib.auth import get_user_model
+from accounts.models import User
 from questionnaires.models import (
     Section, Question, AnswerOption, QuestionDimension, BranchingCondition
 )
@@ -10,7 +10,6 @@ from django.db.models import Sum
 import time
 from admin_portal.models import ActivityLog
 
-User = get_user_model()
 
 # -------- Sections
 class SectionAdminSerializer(serializers.ModelSerializer):
@@ -401,7 +400,6 @@ class AdminUserCreateSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
     def create(self, validated_data):
-        User = get_user_model()
         u = User.objects.create_user(
             email=validated_data["email"],
             password=validated_data["password"],

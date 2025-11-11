@@ -19,8 +19,7 @@ SENSITIVE_FIELDS = {"password", "reset_token", "otp", "secret", "api_key"}
 
 # ---------------- utilities ----------------
 
-from django.contrib.auth import get_user_model
-User = get_user_model()
+from accounts.models import User
 
 def _safe_actor():
     actor = get_actor()

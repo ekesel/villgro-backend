@@ -1,13 +1,11 @@
 import pytest
 from rest_framework.test import APIClient
-from django.contrib.auth import get_user_model
 
 from questionnaires.models import Section, Question
 from organizations.models import Organization
 from assessments.models import Assessment, Answer
 from assessments.services import visible_questions_for_section
-
-User = get_user_model()
+from accounts.models import User
 
 def _login_admin() -> APIClient:
     admin = User.objects.create_user(

@@ -2,12 +2,10 @@ import pytest
 from rest_framework.test import APIClient
 from django.utils import timezone
 
-from django.contrib.auth import get_user_model
 from organizations.models import Organization
 from assessments.models import Assessment
 from questionnaires.models import LoanEligibilityResult, LoanInstrument
-
-User = get_user_model()
+from accounts.models import User
 
 
 @pytest.mark.django_db

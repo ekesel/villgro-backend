@@ -3,7 +3,7 @@ import logging
 
 from rest_framework import viewsets, status
 from rest_framework.response import Response
-from django.contrib.auth import get_user_model
+from accounts.models import User
 from django.db.models import Q
 from django.http import Http404
 from rest_framework.exceptions import ValidationError
@@ -12,7 +12,6 @@ from admin_portal.permissions import IsAdminRole
 from admin_portal.serializers import AdminUserSerializerLite, AdminUserCreateSerializer
 from rest_framework.pagination import PageNumberPagination
 
-User = get_user_model()
 logger = logging.getLogger(__name__)
 
 class AdminPage(PageNumberPagination):

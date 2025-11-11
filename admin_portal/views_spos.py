@@ -3,7 +3,7 @@ import logging
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.contrib.auth import get_user_model
+from accounts.models import User
 from django.http import Http404, HttpResponse
 from rest_framework.exceptions import ValidationError
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse, OpenApiExample
@@ -19,7 +19,6 @@ from assessments.models import Assessment
 from questionnaires.models import LoanEligibilityResult
 from django.db.models import Prefetch, Max, Case, When, IntegerField
 
-User = get_user_model()
 logger = logging.getLogger(__name__)
 
 @extend_schema(tags=["Admin • SPOs"])

@@ -1,9 +1,7 @@
 import pytest
 from rest_framework.test import APIClient
-from django.contrib.auth import get_user_model
-from accounts.models import PasswordResetCode
+from accounts.models import PasswordResetCode, User
 
-User = get_user_model()
 
 @pytest.mark.django_db
 def test_forgot_password_flow():

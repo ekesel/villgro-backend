@@ -2,13 +2,12 @@ import pytest
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from django.contrib.auth import get_user_model
+from accounts.models import User
 from organizations.models import Organization
 from assessments.models import Assessment
 from questionnaires.models import Section, EligibilityRule
 from questionnaires.logic import eligibility_check
 
-User = get_user_model()
 
 
 def login(client: APIClient, email: str, password: str) -> str:

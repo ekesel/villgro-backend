@@ -1,10 +1,9 @@
-from django.contrib.auth import get_user_model, password_validation
+from django.contrib.auth import password_validation
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from datetime import datetime
-
-User = get_user_model()
+from accounts.models import User
 
 from organizations.models import Organization
 from accounts.models import PasswordResetCode

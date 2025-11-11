@@ -9,6 +9,7 @@ from organizations.models import Organization
 from django.db.models import Sum
 import time
 from admin_portal.models import ActivityLog
+from django.contrib.auth.password_validation import validate_password
 
 
 # -------- Sections
@@ -410,3 +411,7 @@ class AdminUserCreateSerializer(serializers.Serializer):
             is_staff=True,
         )
         return u
+    
+    def validate_password(self, value):
+        validate_password(value)
+        return value

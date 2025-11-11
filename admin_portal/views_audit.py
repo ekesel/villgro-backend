@@ -39,7 +39,7 @@ class ActivityListView(APIView):
     permission_classes = [IsAuthenticated, IsAdminRole]
 
     def get(self, request):
-        qs = ActivityLog.objects.all()
+        qs = ActivityLog.objects.exclude(action=ActivityLog.Action.API_HIT)
         q = request.query_params.get("q")
         if q:
             qs = qs.filter(Q(help_text__icontains=q) | Q(object_repr__icontains=q))

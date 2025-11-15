@@ -51,7 +51,14 @@ class AdminUsersViewSet(viewsets.ModelViewSet):
         responses={200: AdminUserSerializerLite(many=True)},
     )
     def list(self, *args, **kwargs):
-        return super().list(*args, **kwargs)
+        try:
+            return super().list(*args, **kwargs)
+        except Exception as e:
+            logger.exception("Failed to list admin users")
+            return Response(
+                {"message": "We could not fetch the admin users right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @extend_schema(
         summary="Create Admin",
@@ -68,18 +75,18 @@ class AdminUsersViewSet(viewsets.ModelViewSet):
                 {"message": "Please fix the highlighted fields.", "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except Exception:
+        except Exception as e:
             logger.exception("Unexpected error validating admin user create payload")
             return Response(
-                {"message": "We could not create the admin user right now. Please try again later."},
+                {"message": "We could not create the admin user right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         try:
             user = ser.save()
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to create admin user for %s", ser.validated_data.get("email"))
             return Response(
-                {"message": "We could not create the admin user right now. Please try again later."},
+                {"message": "We could not create the admin user right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         out = AdminUserSerializerLite(user).data
@@ -90,7 +97,13 @@ class AdminUsersViewSet(viewsets.ModelViewSet):
         responses={200: AdminUserSerializerLite, 404: OpenApiResponse},
     )
     def retrieve(self, *args, **kwargs):
-        return super().retrieve(*args, **kwargs)
+        try:
+            return super().retrieve(*args, **kwargs)
+        except Exception as e:
+            return Response(
+                {"message": "We could not fetch the admin user right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @extend_schema(
         summary="Update Admin (toggle is_active, names, phone)",
@@ -101,11 +114,11 @@ class AdminUsersViewSet(viewsets.ModelViewSet):
             u = self.get_object()
         except Http404:
             logger.info("Admin user not found for update: %s", kwargs.get(self.lookup_field))
-            return Response({"message": "Admin user not found."}, status=status.HTTP_404_NOT_FOUND)
-        except Exception:
+            return Response({"message": "Admin user not found.", "errors": {}}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
             logger.exception("Failed to load admin user for update %s", kwargs.get(self.lookup_field))
             return Response(
-                {"message": "We could not fetch the admin user right now. Please try again later."},
+                {"message": "We could not fetch the admin user right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         try:
@@ -119,10 +132,10 @@ class AdminUsersViewSet(viewsets.ModelViewSet):
                 {"message": "Please fix the highlighted fields.", "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to update admin user %s", u.pk)
             return Response(
-                {"message": "We could not update the admin user right now. Please try again later."},
+                {"message": "We could not update the admin user right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(AdminUserSerializerLite(u).data)
@@ -136,19 +149,19 @@ class AdminUsersViewSet(viewsets.ModelViewSet):
             obj = self.get_object()
         except Http404:
             logger.info("Admin user not found for delete: %s", kwargs.get(self.lookup_field))
-            return Response({"message": "Admin user not found."}, status=status.HTTP_404_NOT_FOUND)
-        except Exception:
+            return Response({"message": "Admin user not found.", "errors": {}}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
             logger.exception("Failed to load admin user for delete %s", kwargs.get(self.lookup_field))
             return Response(
-                {"message": "We could not fetch the admin user right now. Please try again later."},
+                {"message": "We could not fetch the admin user right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         try:
             obj.delete()
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to delete admin user %s", obj.pk)
             return Response(
-                {"message": "We could not delete the admin user right now. Please try again later."},
+                {"message": "We could not delete the admin user right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(status=204)

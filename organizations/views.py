@@ -26,10 +26,16 @@ class OnboardingProgressView(APIView):
         )],
     )
     def get(self, request):
-        prog = get_or_create_progress(request.user)
-        payload = OnboardingProgressSerializer(prog).data
-        payload["has_completed_profile"] = bool(prog.is_complete)
-        return Response(payload)
+        try:
+            prog = get_or_create_progress(request.user)
+            payload = OnboardingProgressSerializer(prog).data
+            payload["has_completed_profile"] = bool(prog.is_complete)
+            return Response(payload)
+        except Exception as e:
+            return Response(
+                {"message": "We could not fetch the onboarding progress right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @extend_schema(
         request=OnboardingProgressSaveSerializer,
@@ -41,11 +47,17 @@ class OnboardingProgressView(APIView):
         )],
     )
     def patch(self, request):
-        prog = get_or_create_progress(request.user)
-        ser = OnboardingProgressSaveSerializer(data=request.data)
-        ser.is_valid(raise_exception=True)
-        prog = ser.update(prog, ser.validated_data)
-        return Response(OnboardingProgressSerializer(prog).data, status=status.HTTP_200_OK)
+        try:
+            prog = get_or_create_progress(request.user)
+            ser = OnboardingProgressSaveSerializer(data=request.data)
+            ser.is_valid(raise_exception=True)
+            prog = ser.update(prog, ser.validated_data)
+            return Response(OnboardingProgressSerializer(prog).data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {"message": "We could not save the onboarding progress right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 class OnboardingAdvanceView(APIView):
     permission_classes = [IsAuthenticated]
@@ -56,12 +68,18 @@ class OnboardingAdvanceView(APIView):
         examples=[OpenApiExample("Advance to step 3", value={"to_step": 3}, request_only=True)],
     )
     def post(self, request):
-        prog = get_or_create_progress(request.user)
-        ser = OnboardingAdvanceSerializer(data=request.data)
-        ser.is_valid(raise_exception=True)
-        prog.bump_to(ser.validated_data["to_step"])
-        prog.save()
-        return Response(OnboardingProgressSerializer(prog).data)
+        try:
+            prog = get_or_create_progress(request.user)
+            ser = OnboardingAdvanceSerializer(data=request.data)
+            ser.is_valid(raise_exception=True)
+            prog.bump_to(ser.validated_data["to_step"])
+            prog.save()
+            return Response(OnboardingProgressSerializer(prog).data)
+        except Exception as e:
+            return Response(
+                {"message": "We could not advance the onboarding progress right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
     
 
 def _get_org_and_progress(user):
@@ -76,65 +94,89 @@ class OnboardingStep2View(APIView):
 
     @extend_schema(request=Step2Serializer, responses={200: dict})
     def patch(self, request):
-        org, prog = _get_org_and_progress(request.user)
-        if not org:
-            return Response({"detail": "Organization not found. Complete step 1 first."}, status=400)
-        ser = Step2Serializer(data=request.data, context={"organization": org, "progress": prog})
-        ser.is_valid(raise_exception=True)
-        ser.save()
-        return Response({
-            "message": "Step 2 saved.",
-            "onboarding": {"current_step": prog.current_step, "is_complete": prog.is_complete}
-        })
+        try:
+            org, prog = _get_org_and_progress(request.user)
+            if not org:
+                return Response({"message": "Organization not found. Complete step 1 first.", "errors": {}}, status=400)
+            ser = Step2Serializer(data=request.data, context={"organization": org, "progress": prog})
+            ser.is_valid(raise_exception=True)
+            ser.save()
+            return Response({
+                "message": "Step 2 saved.",
+                "onboarding": {"current_step": prog.current_step, "is_complete": prog.is_complete}
+            })
+        except Exception as e:
+            return Response(
+                {"message": "We could not save step 2 right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 class OnboardingStep3View(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(request=Step3Serializer, responses={200: dict})
     def patch(self, request):
-        org, prog = _get_org_and_progress(request.user)
-        if not org:
-            return Response({"detail": "Organization not found. Complete step 1 first."}, status=400)
-        ser = Step3Serializer(data=request.data, context={"organization": org})
-        ser.is_valid(raise_exception=True)
-        ser.save()
-        return Response({
-            "message": "Step 3 saved.",
-            "onboarding": {"current_step": prog.current_step, "is_complete": prog.is_complete}
-        })
+        try:
+            org, prog = _get_org_and_progress(request.user)
+            if not org:
+                return Response({"message": "Organization not found. Complete step 1 first."}, status=400)
+            ser = Step3Serializer(data=request.data, context={"organization": org})
+            ser.is_valid(raise_exception=True)
+            ser.save()
+            return Response({
+                "message": "Step 3 saved.",
+                "onboarding": {"current_step": prog.current_step, "is_complete": prog.is_complete}
+            })
+        except Exception as e:
+            return Response(
+                {"message": "We could not save step 3 right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 class OnboardingFinishView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(request=FinishSerializer, responses={200: dict})
     def post(self, request):
-        org, prog = _get_org_and_progress(request.user)
-        if not org:
-            return Response({"detail": "Organization not found. Complete step 1 first."}, status=400)
-        ser = FinishSerializer(data={}, context={"organization": org, "progress": prog})
-        ser.is_valid(raise_exception=True)
-        ser.save()
-        return Response({
-            "message": "Onboarding completed.",
-            "onboarding": {"current_step": prog.current_step, "is_complete": prog.is_complete}
-        })
+        try:
+            org, prog = _get_org_and_progress(request.user)
+            if not org:
+                return Response({"message": "Organization not found. Complete step 1 first.", "error": {}}, status=400)
+            ser = FinishSerializer(data={}, context={"organization": org, "progress": prog})
+            ser.is_valid(raise_exception=True)
+            ser.save()
+            return Response({
+                "message": "Onboarding completed.",
+                "onboarding": {"current_step": prog.current_step, "is_complete": prog.is_complete}
+            })
+        except Exception as e:
+            return Response(
+                {"message": "We could not complete the onboarding right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
     
 class MetaOptionsView(APIView):
     permission_classes = [AllowAny]  # Public; or use IsAuthenticated if you prefer
 
     @extend_schema(responses={200: dict})
     def get(self, request):
-        def to_key_label(choices):
-            return [{"key": k, "label": v} for k, v in choices]
+        try:
+            def to_key_label(choices):
+                return [{"key": k, "label": v} for k, v in choices]
 
-        return Response({
-            "registration_types": to_key_label(Organization.RegistrationType.choices),
-            "innovation_types":   to_key_label(Organization.InnovationType.choices),
-            "geo_scopes":         to_key_label(Organization.GeoScope.choices),
-            "focus_sectors":      to_key_label(Organization.FocusSector.choices),
-            "stages":             to_key_label(Organization.OrgStage.choices),
-            "impact_focus":       to_key_label(Organization.ImpactFocus.choices),
-            "use_of_questionnaire": to_key_label(Organization.UseOfQuestionnaire.choices),
-            "states": INDIA_STATES,
-            "top_states_limit": 5
-        })
+            return Response({
+                "registration_types": to_key_label(Organization.RegistrationType.choices),
+                "innovation_types":   to_key_label(Organization.InnovationType.choices),
+                "geo_scopes":         to_key_label(Organization.GeoScope.choices),
+                "focus_sectors":      to_key_label(Organization.FocusSector.choices),
+                "stages":             to_key_label(Organization.OrgStage.choices),
+                "impact_focus":       to_key_label(Organization.ImpactFocus.choices),
+                "use_of_questionnaire": to_key_label(Organization.UseOfQuestionnaire.choices),
+                "states": INDIA_STATES,
+                "top_states_limit": 5
+            })
+        except Exception as e:
+            return Response(
+                {"message": "We could not fetch the meta options right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

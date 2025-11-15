@@ -72,7 +72,13 @@ class LoanRequestViewSet(
     )
     @action(detail=False, methods=["get"], url_path="meta")
     def meta(self, request, *args, **kwargs):
-        return Response({"fund_types": fund_types_meta()}, status=200)
+        try:
+            return Response({"fund_types": fund_types_meta()}, status=200)
+        except Exception as e:
+            return Response(
+                {"message": "We could not fetch the loan meta right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     # ---------- B) PREFILL ----------
     @extend_schema(
@@ -115,37 +121,43 @@ class LoanRequestViewSet(
     )
     @action(detail=False, methods=["get"], url_path="prefill")
     def prefill(self, request, *args, **kwargs):
-        aid = request.query_params.get("assessment_id")
-        if not aid:
-            return Response({"detail": "assessment_id is required"}, status=400)
-
         try:
-            a = Assessment.objects.select_related("organization").get(id=aid)
-        except Assessment.DoesNotExist:
-            return Response({"detail": "Assessment not found"}, status=404)
+            aid = request.query_params.get("assessment_id")
+            if not aid:
+                return Response({"message": "assessment_id is required", "errors": {}}, status=400)
 
-        # ownership check
-        if a.organization.created_by_id != request.user.id and a.organization not in request.user.organizations.all():
-            return Response({"detail": "Not allowed"}, status=403)
+            try:
+                a = Assessment.objects.select_related("organization").get(id=aid)
+            except Assessment.DoesNotExist:
+                return Response({"message": "Assessment not found", "errors": {}}, status=404)
 
-        org: Organization = a.organization
-        org_snapshot = {
-            "name": org.name,
-            "date_of_incorporation": getattr(org, "incorporation_date", None),
-            "dpiit_number": getattr(org, "dpiit_number", None),
-            "legal_registration_type": getattr(org, "registration_type", None),
-            "cin_number": getattr(org, "cin", None),
-            "poc_email": getattr(org, "poc_email", None),
-            "focus_area": getattr(org, "focus_area", None),
-            "company_type": getattr(org, "company_type", None),
-            "annual_operating_budget": getattr(org, "annual_budget", None),
-            "geo_scope": getattr(org, "geo_scope", None),
-        }
-        return Response({
-            "assessment_id": a.id,
-            "organization": org_snapshot,
-            "assessment_scores": a.scores or {},
-        }, status=200)
+            # ownership check
+            if a.organization.created_by_id != request.user.id and a.organization not in request.user.organizations.all():
+                return Response({"message": "Not allowed", "errors": {}}, status=403)
+
+            org: Organization = a.organization
+            org_snapshot = {
+                "name": org.name,
+                "date_of_incorporation": getattr(org, "incorporation_date", None),
+                "dpiit_number": getattr(org, "dpiit_number", None),
+                "legal_registration_type": getattr(org, "registration_type", None),
+                "cin_number": getattr(org, "cin", None),
+                "poc_email": getattr(org, "poc_email", None),
+                "focus_area": getattr(org, "focus_area", None),
+                "company_type": getattr(org, "company_type", None),
+                "annual_operating_budget": getattr(org, "annual_budget", None),
+                "geo_scope": getattr(org, "geo_scope", None),
+            }
+            return Response({
+                "assessment_id": a.id,
+                "organization": org_snapshot,
+                "assessment_scores": a.scores or {},
+            }, status=200)
+        except Exception as e:
+            return Response(
+                {"message": "We could not fetch the loan prefill data right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     # ---------- C) ELIGIBILITY ----------
     @extend_schema(
@@ -198,25 +210,31 @@ class LoanRequestViewSet(
     )
     @action(detail=False, methods=["get"], url_path="eligibility")
     def eligibility(self, request, *args, **kwargs):
-        aid = request.query_params.get("assessment_id")
-        if not aid:
-            return Response({"detail": "assessment_id is required"}, status=400)
-
         try:
-            a = Assessment.objects.select_related("organization").get(id=aid)
-        except Assessment.DoesNotExist:
-            return Response({"detail": "Assessment not found"}, status=404)
+            aid = request.query_params.get("assessment_id")
+            if not aid:
+                return Response({"message": "assessment_id is required", "errors": {}}, status=400)
 
-        if a.organization.created_by_id != request.user.id and a.organization not in request.user.organizations.all():
-            return Response({"detail": "Not allowed"}, status=403)
+            try:
+                a = Assessment.objects.select_related("organization").get(id=aid)
+            except Assessment.DoesNotExist:
+                return Response({"message": "Assessment not found", "errors": {}}, status=404)
 
-        res = eligibility_check(a)
-        return Response({
-            "assessment_id": a.id,
-            "is_eligible": res.is_eligible,
-            "overall_score": float(res.overall_score),
-            "details": res.details,
-        }, status=200)
+            if a.organization.created_by_id != request.user.id and a.organization not in request.user.organizations.all():
+                return Response({"message": "Not allowed", "errors": {}}, status=403)
+
+            res = eligibility_check(a)
+            return Response({
+                "assessment_id": a.id,
+                "is_eligible": res.is_eligible,
+                "overall_score": float(res.overall_score),
+                "details": res.details,
+            }, status=200)
+        except Exception as e:
+            return Response(
+                {"message": "We could not check the loan eligibility right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     # ---------- D) CREATE (SUBMIT) ----------
     @extend_schema(
@@ -248,31 +266,37 @@ class LoanRequestViewSet(
         ]
     )
     def create(self, request, *args, **kwargs):
-        ser = LoanRequestCreateSerializer(data=request.data, context={"request": request})
-        ser.is_valid(raise_exception=True)
+        try:
+            ser = LoanRequestCreateSerializer(data=request.data, context={"request": request})
+            ser.is_valid(raise_exception=True)
 
-        a: Assessment = ser.validated_data["assessment"]
+            a: Assessment = ser.validated_data["assessment"]
 
-        # ownership check mirrors read endpoints
-        if a.organization.created_by_id != request.user.id and a.organization not in request.user.organizations.all():
-            return Response({"detail": "Not allowed"}, status=403)
+            # ownership check mirrors read endpoints
+            if a.organization.created_by_id != request.user.id and a.organization not in request.user.organizations.all():
+                return Response({"message": "Not allowed", "errors": {}}, status=403)
 
-        elig = eligibility_check(a)
-        if not elig.is_eligible:
-            return Response({"detail": "Assessment not eligible for loan."}, status=400)
+            elig = eligibility_check(a)
+            if not elig.is_eligible:
+                return Response({"message": "Assessment not eligible for loan.", "errors": {}}, status=400)
 
-        obj: LoanRequest = LoanRequest.objects.create(
-            assessment=a,
-            organization=a.organization,
-            applicant=request.user,
-            founder_name=ser.validated_data["founder_name"],
-            founder_email=ser.validated_data["founder_email"],
-            amount_in_inr=ser.validated_data["amount_in_inr"],
-            fund_type=ser.validated_data["fund_type"],
-            eligibility_overall=elig.overall_score,
-            eligibility_decision=elig.is_eligible,
-            eligibility_details=elig.details,
-            status=LoanRequest.Status.SUBMITTED,
-            submitted_at=timezone.now(),
-        )
-        return Response(LoanRequestDetailSerializer(obj).data, status=status.HTTP_201_CREATED)
+            obj: LoanRequest = LoanRequest.objects.create(
+                assessment=a,
+                organization=a.organization,
+                applicant=request.user,
+                founder_name=ser.validated_data["founder_name"],
+                founder_email=ser.validated_data["founder_email"],
+                amount_in_inr=ser.validated_data["amount_in_inr"],
+                fund_type=ser.validated_data["fund_type"],
+                eligibility_overall=elig.overall_score,
+                eligibility_decision=elig.is_eligible,
+                eligibility_details=elig.details,
+                status=LoanRequest.Status.SUBMITTED,
+                submitted_at=timezone.now(),
+            )
+            return Response(LoanRequestDetailSerializer(obj).data, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response(
+                {"message": "We could not submit the loan request right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

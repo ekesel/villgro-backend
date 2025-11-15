@@ -38,4 +38,4 @@ def test_change_password_wrong_current():
         "confirm_password": "NewPass123!"
     }, format="json")
     assert resp.status_code == 400
-    assert "current_password" in resp.data
+    assert "current_password" in resp.data.get("errors", {})

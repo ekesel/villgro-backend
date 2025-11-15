@@ -41,8 +41,14 @@ logger = logging.getLogger(__name__)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def feedback_meta(request):
-    reasons = [{"key": key, "label": label} for key, label in AssessmentFeedback.Reason.choices]
-    return Response({"reasons": reasons}, status=200)
+    try:
+        reasons = [{"key": key, "label": label} for key, label in AssessmentFeedback.Reason.choices]
+        return Response({"reasons": reasons}, status=200)
+    except Exception as e:
+        return Response(
+            {"message": "We could not fetch the feedback meta right now. Please try again later.", "errors": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 class FeedbackView(APIView):
     permission_classes = [IsAuthenticated]
@@ -62,33 +68,39 @@ class FeedbackView(APIView):
         ],
     )
     def post(self, request):
-        aid = request.data.get("assessment")
-        if not aid:
-            return Response({"assessment": ["This field is required."]}, status=400)
-
-        a = get_object_or_404(Assessment, pk=aid)
-        if a.organization.created_by_id != request.user.id:
-            return Response({"assessment": ["Not allowed for this assessment."]}, status=400)
-
-        # UPSERT
-        inst, _ = AssessmentFeedback.objects.get_or_create(assessment=a)
-        ser = AssessmentFeedbackSerializer(
-            inst, data=request.data, partial=True, context={"request": request}
-        )
-
         try:
-            if _ and a.status == "DRAFT":
-                send_spo_abandoned_email(
-                    spo=request.user,
-                    org=a.organization,
-                    assessment=a,
-                    recorded_at=inst.created_at,
-                )
+            aid = request.data.get("assessment")
+            if not aid:
+                return Response({"message": "assessment is required", "errors": { "assessment": ["This field is required."] }}, status=400)
+
+            a = get_object_or_404(Assessment, pk=aid)
+            if a.organization.created_by_id != request.user.id:
+                return Response({"message": "Not allowed", "errors" : {"assessment": ["Not allowed for this assessment."]}}, status=400)
+
+            # UPSERT
+            inst, _ = AssessmentFeedback.objects.get_or_create(assessment=a)
+            ser = AssessmentFeedbackSerializer(
+                inst, data=request.data, partial=True, context={"request": request}
+            )
+
+            try:
+                if _ and a.status == "DRAFT":
+                    send_spo_abandoned_email(
+                        spo=request.user,
+                        org=a.organization,
+                        assessment=a,
+                        recorded_at=inst.created_at,
+                    )
+            except Exception as e:
+                logger.info("Failed to send SPO abandoned email for assessment %s: %s", a.id, e)
+            ser.is_valid(raise_exception=True)
+            ser.save(assessment=a)
+            return Response(ser.data, status=status.HTTP_200_OK)
         except Exception as e:
-            logger.info("Failed to send SPO abandoned email for assessment %s: %s", a.id, e)
-        ser.is_valid(raise_exception=True)
-        ser.save(assessment=a)
-        return Response(ser.data, status=status.HTTP_200_OK)
+            return Response(
+                {"message": "We could not submit the feedback right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @extend_schema(
         tags=["SPO • Feedback"],
@@ -97,24 +109,30 @@ class FeedbackView(APIView):
         responses={200: AssessmentFeedbackSerializer, 404: OpenApiResponse(description="No feedback found")},
     )
     def get(self, request):
-        aid = request.query_params.get("assessment_id")
-        if not aid:
-            return Response({"detail": "assessment_id is required"}, status=400)
-        a = get_object_or_404(Assessment, pk=aid, organization=request.user.organization)
-        fb = AssessmentFeedback.objects.filter(assessment=a).order_by("-created_at").first()
+        try:
+            aid = request.query_params.get("assessment_id")
+            if not aid:
+                return Response({"message": "assessment_id is required"}, status=400)
+            a = get_object_or_404(Assessment, pk=aid, organization=request.user.organization)
+            fb = AssessmentFeedback.objects.filter(assessment=a).order_by("-created_at").first()
 
-        # if none exists, return an empty shape the frontend/test expects
-        if not fb:
+            # if none exists, return an empty shape the frontend/test expects
+            if not fb:
+                return Response(
+                    {
+                        "assessment": a.id,
+                        "reasons": [],
+                        "comment": "",
+                        "created_at": None,
+                    },
+                    status=200,
+                )
+
+            # serialize a SINGLE instance (not the manager/queryset)
+            ser = AssessmentFeedbackSerializer(fb, context={"request": request})
+            return Response(ser.data, status=200)
+        except Exception as e:
             return Response(
-                {
-                    "assessment": a.id,
-                    "reasons": [],
-                    "comment": "",
-                    "created_at": None,
-                },
-                status=200,
+                {"message": "We could not fetch the feedback right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-
-        # serialize a SINGLE instance (not the manager/queryset)
-        ser = AssessmentFeedbackSerializer(fb, context={"request": request})
-        return Response(ser.data, status=200)

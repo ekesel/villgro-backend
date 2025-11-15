@@ -1,4 +1,5 @@
 from rest_framework.views import APIView
+from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
@@ -39,38 +40,44 @@ class ActivityListView(APIView):
     permission_classes = [IsAuthenticated, IsAdminRole]
 
     def get(self, request):
-        qs = ActivityLog.objects.exclude(action=ActivityLog.Action.API_HIT)
-        q = request.query_params.get("q")
-        if q:
-            qs = qs.filter(Q(help_text__icontains=q) | Q(object_repr__icontains=q))
-        for key in ["action", "app_label", "model", "object_id"]:
-            val = request.query_params.get(key)
-            if val: qs = qs.filter(**{key: val})
-        actor = request.query_params.get("actor")
-        if actor: qs = qs.filter(actor_id=actor)
+        try:
+            qs = ActivityLog.objects.exclude(action=ActivityLog.Action.API_HIT)
+            q = request.query_params.get("q")
+            if q:
+                qs = qs.filter(Q(help_text__icontains=q) | Q(object_repr__icontains=q))
+            for key in ["action", "app_label", "model", "object_id"]:
+                val = request.query_params.get(key)
+                if val: qs = qs.filter(**{key: val})
+            actor = request.query_params.get("actor")
+            if actor: qs = qs.filter(actor_id=actor)
 
-        fd, td = _parse_range(request.query_params)
-        if fd: qs = qs.filter(created_at__gte=fd)
-        if td: qs = qs.filter(created_at__lte=td)
+            fd, td = _parse_range(request.query_params)
+            if fd: qs = qs.filter(created_at__gte=fd)
+            if td: qs = qs.filter(created_at__lte=td)
 
-        ordering = request.query_params.get("ordering", "-created_at")
-        qs = qs.order_by(ordering)
+            ordering = request.query_params.get("ordering", "-created_at")
+            qs = qs.order_by(ordering)
 
-        # simple pagination
-        page = int(request.query_params.get("page", 1) or 1)
-        size = int(request.query_params.get("page_size", 20) or 20)
-        start = (page - 1) * size
-        end = start + size
+            # simple pagination
+            page = int(request.query_params.get("page", 1) or 1)
+            size = int(request.query_params.get("page_size", 20) or 20)
+            start = (page - 1) * size
+            end = start + size
 
-        total = qs.count()
-        items = qs[start:end]
-        ser = ActivityLogSerializer(items, many=True)
-        return Response({
-            "count": total,
-            "page": page,
-            "page_size": size,
-            "results": ser.data
-        })
+            total = qs.count()
+            items = qs[start:end]
+            ser = ActivityLogSerializer(items, many=True)
+            return Response({
+                "count": total,
+                "page": page,
+                "page_size": size,
+                "results": ser.data
+            })
+        except Exception as e:
+            return Response(
+                {"message": "We could not fetch the activity logs right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 @extend_schema(
     tags=["Admin • Activity"],
@@ -81,5 +88,11 @@ class ActivityDetailView(APIView):
     permission_classes = [IsAuthenticated, IsAdminRole]
 
     def get(self, request, pk):
-        obj = ActivityLog.objects.get(pk=pk)
-        return Response(ActivityLogSerializer(obj).data)
+        try:
+            obj = ActivityLog.objects.get(pk=pk)
+            return Response(ActivityLogSerializer(obj).data)
+        except Exception as e:
+            return Response(
+                {"message": "We could not fetch the activity log right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

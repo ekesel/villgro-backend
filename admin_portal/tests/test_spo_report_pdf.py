@@ -116,4 +116,4 @@ def test_report_pdf_404_when_no_org(seed_rules):
 
     assert resp.status_code == 404
     body = resp.json()
-    assert body.get("detail") in ("Organization not found for this SPO", "Not found")
+    assert body.get("message") in ("Organization not found for this SPO", "Not found")

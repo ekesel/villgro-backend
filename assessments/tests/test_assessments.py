@@ -160,7 +160,7 @@ def test_submit_with_missing_required_answers(api_client):
     resp = client.post(url)
     assert resp.status_code == 400
     data = resp.json()
-    assert data["detail"] == "Missing answers"
+    assert data["message"] == "Missing answers"
 
 
 def test_save_answers_with_invalid_question(api_client):
@@ -172,7 +172,7 @@ def test_save_answers_with_invalid_question(api_client):
     resp = client.patch(ans_url, payload, format="json")
     # Should fail because the question doesn't exist
     assert resp.status_code == 400
-    assert "Invalid question code" in resp.json()["detail"]
+    assert "Invalid question code" in resp.json()["message"]
 
 
 def test_cannot_submit_twice(api_client):
@@ -216,7 +216,7 @@ def test_start_fails_during_cooldown(api_client):
     url = reverse("assessment-start")
     resp = client.post(url)
     assert resp.status_code == 403
-    assert "Next attempt available" in resp.json()["detail"]
+    assert "Next attempt available" in resp.json()["message"]
 
 
 def test_user_cannot_access_other_org_assessment(api_client, django_user_model):
@@ -365,7 +365,7 @@ def test_progress_percent_and_resume(api_client):
     # Once submitted, further saves should be blocked
     resp4 = client.patch(ans_url, payload, format="json")
     assert resp4.status_code in [400, 404]
-    assert "cannot be modified" in resp4.json()["detail"]
+    assert "cannot be modified" in resp4.json()["message"]
 
 def test_results_summary_endpoint(api_client):
     client, user = api_client

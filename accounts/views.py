@@ -51,19 +51,20 @@ class SPOSignupStartView(APIView):
                 {"message": "Please correct the highlighted fields.", "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except Exception:
+        except Exception as e:
             logger.exception("Unexpected error validating SPO signup start payload")
             return Response(
-                {"message": "We could not process your signup right now. Please try again later."},
+                {"message": "We could not process your signup right now. Please try again later.",
+                 "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         try:
             user = ser.save()
             refresh = RefreshToken.for_user(user)
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to create SPO account for %s", ser.validated_data.get("email"))
             return Response(
-                {"message": "We could not create your account right now. Please try again later."},
+                {"message": "We could not create your account right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(
@@ -122,18 +123,18 @@ class SPOSignupCompleteView(APIView):
                 {"message": "Please review the profile details.", "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except Exception:
+        except Exception as e:
             logger.exception("Unexpected error validating SPO profile for user %s", user.id)
             return Response(
-                {"message": "We could not save the profile right now. Please try again later."},
+                {"message": "We could not save the profile right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         try:
             org = serializer.save()
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to save SPO profile for user %s", user.id)
             return Response(
-                {"message": "We could not save the profile right now. Please try again later."},
+                {"message": "We could not save the profile right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -194,7 +195,27 @@ class LoginView(TokenObtainPairView):
         ],
     )
     def post(self, request, *args, **kwargs):
-        return super().post(request, *args, **kwargs)
+        try:
+            # Let DRF/JWT handle authentication normally
+            return super().post(request, *args, **kwargs)
+
+        except ValidationError as exc:
+            # Example: missing fields / invalid serializer input
+            return Response(
+                {
+                    "message": "Please fix the highlighted fields.",
+                    "errors": exc.detail,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        except Exception as e:
+            # Anything unexpected
+            logger.exception("Unexpected error in login request")
+            return Response(
+                {"message": "We could not process your request right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
 
 
 class RefreshView(TokenRefreshView):
@@ -229,18 +250,18 @@ class LogoutView(APIView):
                 {"message": "Please check the logout payload.", "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except Exception:
+        except Exception as e:
             logger.exception("Unexpected error validating logout payload for user %s", request.user.id)
             return Response(
-                {"message": "We could not process your logout right now. Please try again later."},
+                {"message": "We could not process your logout right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         try:
             serializer.save()
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to blacklist refresh token during logout for user %s", request.user.id)
             return Response(
-                {"message": "We could not log you out right now. Please try again later."},
+                {"message": "We could not log you out right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response({"message": "Logout successful. Token blacklisted."}, status=205)
@@ -258,18 +279,18 @@ class ForgotPasswordView(APIView):
                 {"message": "Please check the email address.", "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except Exception:
+        except Exception as e:
             logger.exception("Unexpected error validating forgot password payload")
             return Response(
-                {"message": "We could not start the reset process right now. Please try again later."},
+                {"message": "We could not start the reset process right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         try:
             serializer.save()
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to trigger forgot password flow for %s", serializer.validated_data.get("email"))
             return Response(
-                {"message": "We could not start the reset process right now. Please try again later."},
+                {"message": "We could not start the reset process right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response({"message": "If the email exists, a reset code has been sent."})
@@ -288,10 +309,10 @@ class VerifyCodeView(APIView):
                 {"message": "The code you entered is incorrect.", "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except Exception:
+        except Exception as e:
             logger.exception("Unexpected error validating verification code")
             return Response(
-                {"message": "We could not verify the code right now. Please try again later."},
+                {"message": "We could not verify the code right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response({"message": "Code verified."})
@@ -310,18 +331,18 @@ class ResetPasswordView(APIView):
                 {"message": "Please fix the highlighted fields.", "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except Exception:
+        except Exception as e:
             logger.exception("Unexpected error validating reset password payload")
             return Response(
-                {"message": "We could not reset the password right now. Please try again later."},
+                {"message": "We could not reset the password right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         try:
             serializer.save()
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to reset password for user linked to token %s", serializer.validated_data.get("uid"))
             return Response(
-                {"message": "We could not reset the password right now. Please try again later."},
+                {"message": "We could not reset the password right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response({"message": "Password reset successful."})
@@ -334,10 +355,10 @@ class ProfileView(APIView):
     def get(self, request):
         try:
             data = ProfileSerializer(request.user).data
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to load profile for user %s", request.user.id)
             return Response(
-                {"message": "We could not fetch the profile right now. Please try again later."},
+                {"message": "We could not fetch the profile right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(data)
@@ -353,18 +374,18 @@ class ProfileView(APIView):
                 {"message": "Please review the profile details.", "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except Exception:
+        except Exception as e:
             logger.exception("Unexpected error validating profile update for user %s", request.user.id)
             return Response(
-                {"message": "We could not update the profile right now. Please try again later."},
+                {"message": "We could not update the profile right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         try:
             ser.save()
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to update profile for user %s", request.user.id)
             return Response(
-                {"message": "We could not update the profile right now. Please try again later."},
+                {"message": "We could not update the profile right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response(ProfileSerializer(request.user).data)
@@ -399,23 +420,21 @@ class ChangePasswordView(APIView):
         try:
             ser.is_valid(raise_exception=True)
         except ValidationError as exc:
-            logger.info("Change password validation failed for user %s: %s", request.user.id, exc.detail)
             details = exc.detail if isinstance(exc.detail, dict) else {"non_field_errors": exc.detail}
-            payload = {"message": "Please fix the highlighted fields."}
-            payload.update(details)  # <-- put 'current_password' directly at top level
+            payload = {"message": "Please fix the highlighted fields.", "errors": details}
             return Response(payload, status=status.HTTP_400_BAD_REQUEST)
-        except Exception:
+        except Exception as e:
             logger.exception("Unexpected error validating change password payload for user %s", request.user.id)
             return Response(
-                {"message": "We could not update the password right now. Please try again later."},
+                {"message": "We could not update the password right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         try:
             ser.save()
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to change password for user %s", request.user.id)
             return Response(
-                {"message": "We could not update the password right now. Please try again later."},
+                {"message": "We could not update the password right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         return Response({"message": "Password updated. Please log in again."}, status=205)

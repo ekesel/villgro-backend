@@ -20,12 +20,13 @@ def _normalize(value: float | int | None, lo: float, hi: float) -> float | None:
 
 class AssessmentSerializer(serializers.ModelSerializer):
     graph = serializers.SerializerMethodField()
+    sector = serializers.CharField(source="organization.focus_sector", read_only=True)
 
     class Meta:
         model = Assessment
         fields = [
             "id", "status", "started_at", "submitted_at",
-            "cooldown_until", "progress", "scores", "graph",
+            "cooldown_until", "progress", "scores", "graph", "sector"
         ]
 
     def get_graph(self, obj: Assessment) -> dict:

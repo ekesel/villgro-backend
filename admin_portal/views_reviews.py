@@ -74,6 +74,7 @@ class AdminReviewsViewSet(viewsets.ViewSet):
                     "organization_name": a.organization.name,
                     "status": status_label,
                     "review": (fb.comment or ""),
+                    "reasons": fb.reasons or [],
                 }
 
             data = [row(f) for f in page]

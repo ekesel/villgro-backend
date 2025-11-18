@@ -1,4 +1,4 @@
-from questionnaires.logic import evaluate_rule
+from questionnaires.logic import evaluate_rule, _load_section_rules, _normalize_to_100, _clamp_0_100
 from questionnaires.models import Section, Question
 from typing import Dict, Tuple
 from questionnaires.utils import extract_q_refs
@@ -81,6 +81,8 @@ def question_points(q: Question, ans: dict) -> float:
 
     return 0.0
 
+from decimal import Decimal
+
 def compute_scores(assessment) -> Tuple[Dict, Dict]:
     """
     Returns (scores, per_question_breakdown)
@@ -90,13 +92,17 @@ def compute_scores(assessment) -> Tuple[Dict, Dict]:
        ...
     }
     Feedback is ignored in section/overall.
+
+    Overall score now uses the same weighted + normalized logic
+    that eligibility_check applies, so both stay consistent.
     """
     answers_map = build_answers_map(assessment)
-    scores = {"sections": {}, "overall": 0.0}
-    breakdown = {}
+    scores: Dict[str, Any] = {"sections": {}, "overall": 0.0}
+    breakdown: Dict[str, Any] = {}
     total = 0.0
     count = 0
 
+    # ---- existing per-section logic (unchanged) ----
     for sec in Section.objects.all().order_by("order"):
         visible = visible_questions_for_section(assessment, sec)
         if not visible:
@@ -119,11 +125,59 @@ def compute_scores(assessment) -> Tuple[Dict, Dict]:
                 "weighted": round(weighted, 2),
             })
 
+        # Ignore FEEDBACK in numeric scoring, as before
         if q_count > 0 and sec.code != "FEEDBACK":
             avg = sec_points / q_count
             scores["sections"][sec.code] = round(avg, 2)
             total += avg
             count += 1
 
-    scores["overall"] = round(total / count, 2) if count else 0.0
+    # ---- new overall calculation: mirror eligibility_check ----
+    sec_scores: Dict[str, Decimal] = scores["sections"] or {}
+
+    # If we have no section scores, keep overall = 0.0
+    if not sec_scores:
+        scores["overall"] = 0.0
+        return scores, breakdown
+
+    rules_by_code = _load_section_rules()
+    total_weighted = Decimal("0")
+    weights_sum = Decimal("0")
+
+    for section in Section.objects.all().order_by("order"):
+        code = section.code
+        raw_score = sec_scores.get(code)
+
+        # Only consider a section if it has a rule and a score
+        if (code not in rules_by_code) or (raw_score is None):
+            continue
+
+        rule = rules_by_code[code]
+        norm_score = _normalize_to_100(raw_score)
+        w = Decimal(str(rule.weight or 0))
+        min_t = Decimal(str(rule.min_threshold))
+        max_t = Decimal(str(rule.max_threshold))
+
+        # Special-case for RISK (lower is better), same as eligibility_check
+        if code.upper() == "RISK":
+            # keep RISK raw scale (usually 0–40) if within max_t
+            if raw_score is not None and Decimal(str(raw_score)) <= max_t:
+                norm_score = Decimal(str(raw_score))
+
+        contrib = Decimal("0")
+        if w > 0:
+            contrib = (norm_score * w) / Decimal("100")  # weight as percentage
+            total_weighted += contrib
+            weights_sum += w
+
+    if weights_sum == 0:
+        # No rules/weights contributed – fallback to old simple average behaviour
+        scores["overall"] = round(total / count, 2) if count else 0.0
+    else:
+        overall_score = _clamp_0_100(
+            total_weighted / (weights_sum / Decimal("100"))
+        )
+        # keep as float with 2 decimal places for consistency with previous API
+        scores["overall"] = float(overall_score.quantize(Decimal("0.01")))
+
     return scores, breakdown

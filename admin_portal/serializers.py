@@ -404,6 +404,7 @@ class AdminReviewListSerializer(serializers.Serializer):
     organization_name = serializers.CharField()
     status = serializers.CharField(help_text="Completed/Incomplete derived from assessment.status")
     review = serializers.CharField(allow_blank=True)
+    reasons = serializers.ListField(child=serializers.CharField())
 
 class AdminReviewDetailSerializer(serializers.Serializer):
     id = serializers.IntegerField()

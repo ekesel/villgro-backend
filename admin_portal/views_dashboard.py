@@ -18,6 +18,7 @@ from assessments.models import Assessment
 from assessments.services import compute_progress
 from admin_portal.permissions import IsAdminRole
 from admin_portal.models import ActivityLog
+from questionnaires.models import LoanRequest
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +157,10 @@ class AdminDashboardSummaryView(APIView):
             completion_rate = _safe_div(submitted_qs.count(), started_qs.count())
 
             # ---------- KPI: Loan requests (placeholder = 0) ----------
-            loan_requests = 0
+            loan_requests = LoanRequest.objects.filter(
+                submitted_at__gte=win_from,
+                submitted_at__lte=win_to,
+            ).count()
 
             # ---------- Funnel ----------
             # Registered (windowed)

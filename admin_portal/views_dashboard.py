@@ -189,8 +189,13 @@ class AdminDashboardSummaryView(APIView):
                     .annotate(count=Count("id"))
                     .order_by()
             )
+            total_orgs = sum(row["count"] for row in sector_counts) or 1
             sector_distribution = [
-                {"key": row["focus_sector"], "count": row["count"]}
+                {
+                    "key": row["focus_sector"],
+                    "count": row["count"],
+                    "percent": round(_safe_div(row["count"], total_orgs) * 100.0, 2),
+                }
                 for row in sector_counts
             ]
 

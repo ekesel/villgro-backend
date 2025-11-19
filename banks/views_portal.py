@@ -4,7 +4,7 @@ from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.http import HttpResponse
 from django.utils import timezone
-
+from django.db.models import Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -35,9 +35,11 @@ class BankSPOViewSet(viewsets.ViewSet):
     @extend_schema(
         tags=["Bank • SPOs"],
         operation_id="bank_spo_list",
-        summary="List SPOs (system-wide)",
+        summary="List SPOs (system-wide, loan-eligible only)",
         description=(
-            "Returns paginated list of SPOs for bank users.\n\n"
+            "Returns a paginated list of SPOs for bank users.\n\n"
+            "Only SPOs whose Organization has **at least one** eligible LoanEligibilityResult "
+            "(`is_eligible = true`) are included.\n\n"
             "**Columns:**\n"
             "- `id`: SPO user id (sortable by `ordering=id` or `-id`)\n"
             "- `date_joined` (also filterable via `joined_from`, `joined_to`)\n"
@@ -46,7 +48,7 @@ class BankSPOViewSet(viewsets.ViewSet):
             "- `last_assessment_submitted_at`, `last_loan_request_submitted_at`\n\n"
             "**Filters** (all optional):\n"
             "- `q`: search email/name/organization\n"
-            "- `sector`: exact match on organization.focus_area (exposed as `focus_sector`)\n"
+            "- `sector`: exact match on organization.focus_sector\n"
             "- `is_active`: true/false\n"
             "- `joined_from`, `joined_to`: ISO datetime\n"
             "- `ordering`: `id` | `-id` (default `-id`)\n"
@@ -74,8 +76,8 @@ class BankSPOViewSet(viewsets.ViewSet):
                     "is_active": True,
                     "date_joined": "2025-09-30T10:15:00Z",
                     "organization_name": "GreenTech Pvt",
-                    "focus_sector": "Health",
-                    "org_created_at": None,
+                    "focus_sector": "AGRICULTURE",
+                    "org_created_at": "2025-09-15T08:00:00Z",
                     "last_assessment_submitted_at": "2025-10-20T09:00:00Z",
                     "last_loan_request_submitted_at": "2025-10-21T11:30:00Z"
                 }]
@@ -86,18 +88,8 @@ class BankSPOViewSet(viewsets.ViewSet):
         try:
             qs = self._base_qs()
 
-            # filters
+            # --- filters ---
             q = request.query_params.get("q")
-            if q:
-                qs = qs.filter(
-                    (User._meta.model.objects.filter(pk__in=qs.values("id"))).filter(
-                        # compound via icontains on email/first/last/org
-                    )
-                )
-                # ^ DRF won't like this; just a placeholder to indicate we will OR the predicates below.
-
-            # build OR directly:
-            from django.db.models import Q
             if q:
                 qs = qs.filter(
                     Q(email__icontains=q) |
@@ -126,7 +118,23 @@ class BankSPOViewSet(viewsets.ViewSet):
                 ordering = "-id"
             qs = qs.order_by(ordering)
 
-            # pagination (limit/offset) default 50
+            # --- restrict to SPOs that are loan-eligible ---
+            eligible_spo_ids = (
+                LoanEligibilityResult.objects
+                .filter(
+                    is_eligible=True,
+                    assessment__organization__created_by__in=qs,
+                )
+                .values_list("assessment__organization__created_by_id", flat=True)
+                .distinct()
+            )
+
+            qs = qs.filter(id__in=eligible_spo_ids)
+
+            # total AFTER eligibility + filters
+            total_count = qs.count()
+
+            # --- pagination (limit/offset, default 50) ---
             try:
                 limit = int(request.query_params.get("limit", 50))
             except ValueError:
@@ -136,23 +144,28 @@ class BankSPOViewSet(viewsets.ViewSet):
             except ValueError:
                 offset = 0
 
-            ids = list(qs.values_list("id", flat=True)[offset:offset+limit])
-            rows = []
+            ids = list(qs.values_list("id", flat=True)[offset:offset + limit])
+            if not ids:
+                return Response({"count": total_count, "results": []})
+
             # prefetch summary timestamps
             submitted_by_user = (
-                Assessment.objects.filter(organization__created_by_id__in=ids, status="SUBMITTED")
+                Assessment.objects
+                .filter(organization__created_by_id__in=ids, status="SUBMITTED")
                 .values("organization__created_by_id")
                 .annotate(last_submitted=Max("submitted_at"))
             )
             last_a_map = {x["organization__created_by_id"]: x["last_submitted"] for x in submitted_by_user}
 
             last_lr = (
-                LoanRequest.objects.filter(organization__created_by_id__in=ids)
+                LoanRequest.objects
+                .filter(organization__created_by_id__in=ids)
                 .values("organization__created_by_id")
                 .annotate(last_lr=Max("submitted_at"))
             )
             last_lr_map = {x["organization__created_by_id"]: x["last_lr"] for x in last_lr}
 
+            rows = []
             for u in User.objects.filter(id__in=ids).select_related("organization"):
                 org = getattr(u, "organization", None)
                 rows.append({
@@ -170,7 +183,7 @@ class BankSPOViewSet(viewsets.ViewSet):
                 })
 
             return Response({
-                "count": self._base_qs().count(),
+                "count": total_count,
                 "results": BankSPOListItemSerializer(rows, many=True).data
             })
         except Exception as e:

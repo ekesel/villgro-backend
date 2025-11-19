@@ -147,7 +147,6 @@ def _snapshot(instance):
     return data
 
 # ---------------- handlers ----------------
-
 @receiver(pre_save)
 def capture_pre_save(sender, instance, **kwargs):
     if not (AUDIT_READY and _db_ready() and _should_log_sender(sender)):
@@ -166,7 +165,9 @@ def capture_pre_save(sender, instance, **kwargs):
 
 @receiver(post_save)
 def log_post_save(sender, instance, created, **kwargs):
+    logger.info("post_save signal received for %s (created=%s)", instance, created)
     if not (AUDIT_READY and _db_ready() and _should_log_sender(sender)):
+        logger.info("Audit not ready or DB not ready or sender not to be logged")
         return
     if sender is ActivityLog: return
 

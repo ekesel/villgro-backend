@@ -269,7 +269,14 @@ class BankAdminSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate_contact_email(self, v):
-        if User.objects.filter(email__iexact=v).exists():
+        qs = User.objects.filter(email__iexact=v)
+
+        # If we're updating an existing Bank, allow its own BANK_USER's email
+        bank = getattr(self, "instance", None)
+        if bank and getattr(bank, "user_id", None):
+            qs = qs.exclude(pk=bank.user_id)
+
+        if qs.exists():
             raise serializers.ValidationError("A user with this email already exists.")
         return v
 

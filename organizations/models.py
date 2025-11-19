@@ -15,6 +15,8 @@ class Organization(models.Model):
     cin_number = models.CharField(max_length=50, blank=True)
     registration_type = models.CharField(max_length=20, choices=RegistrationType.choices)
     created_by = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="organization")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     # STEP 2
     class InnovationType(models.TextChoices):

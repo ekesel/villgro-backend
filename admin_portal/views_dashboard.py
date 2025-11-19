@@ -95,7 +95,7 @@ class AdminDashboardSummaryView(APIView):
             #     return Response(cached)
 
             win_from, win_to = _window_from_query(request.query_params)
-            logger.debug(f"AdminDashboardSummaryView: window from {win_from} to {win_to}")
+            logger.info(f"AdminDashboardSummaryView: window from {win_from} to {win_to}")
 
             # ---------- KPI: SPOs (windowed) ----------
             spos_qs = User.objects.filter(

@@ -293,16 +293,152 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
             )
 
     @extend_schema(
-        summary="Retrieve SPO",
-        responses={200: AdminSPOListSerializer, 404: OpenApiResponse(description="Not found")},
+        summary="Retrieve SPO (enriched, same shape as list row)",
+        description=(
+            "Retrieve a single Startup (SPO) user by id.\n\n"
+            "The response shape matches a single row from the list API and is enriched with:\n"
+            "- `loan_eligible`: true if ANY eligible LoanEligibilityResult exists for the SPO's organization\n"
+            "- `instrument`: the latest eligible matched instrument (id + name), if present\n"
+            "- `scores`: summary of the latest eligible assessment (overall + IMPACT/RISK/RETURN section scores)\n"
+            "- `assessment_id`: id of the latest eligible assessment (if any)"
+        ),
+        responses={
+            200: AdminSPOListSerializer,
+            404: OpenApiResponse(description="Not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Retrieve response (enriched)",
+                value={
+                    "id": 12,
+                    "email": "spo@startup.com",
+                    "first_name": "Asha",
+                    "last_name": "Verma",
+                    "phone": "9876543210",
+                    "is_active": True,
+                    "date_joined": "2025-10-01T10:15:00Z",
+                    "loan_eligible": True,
+                    "assessment_id": 123,
+                    "instrument": {
+                        "id": 4,
+                        "name": "Commercial debt with impact linked incentives"
+                    },
+                    "scores": {
+                        "overall": 78.5,
+                        "sections": {
+                            "IMPACT": 82.0,
+                            "RISK": 25.0,
+                            "RETURN": 75.0
+                        }
+                    },
+                    "organization": {
+                        "id": 7,
+                        "name": "GreenTech Pvt",
+                        "registration_type": "PRIVATE_LTD"
+                    }
+                },
+                response_only=True,
+            )
+        ],
     )
-    def retrieve(self, *args, **kwargs):
+    def retrieve(self, request, *args, **kwargs):
+        """
+        Retrieve a single SPO in the same enriched shape
+        as a row from the list endpoint.
+        """
         try:
-            return super().retrieve(*args, **kwargs)
+            try:
+                user = self.get_object()
+            except Http404:
+                logger.info("SPO not found for retrieve: %s", kwargs.get(self.lookup_field))
+                return Response(
+                    {"message": "SPO not found.", "errors": {}},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            except Exception as e:
+                logger.exception("Failed to fetch SPO for retrieve %s", kwargs.get(self.lookup_field))
+                return Response(
+                    {
+                        "message": "We could not fetch the SPO right now. Please try again later.",
+                        "errors": str(e),
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            # Base payload from serializer (same as list)
+            data = AdminSPOListSerializer(user).data
+
+            spo_id = user.id
+            loan_eligible = False
+            instrument_payload = None
+            scores_payload = None
+            latest_assessment_id = None
+
+            try:
+                # Latest ELIGIBLE result for this SPO (if any)
+                elig_qs = (
+                    LoanEligibilityResult.objects
+                    .select_related("matched_instrument", "assessment__organization__created_by")
+                    .filter(assessment__organization__created_by_id=spo_id, is_eligible=True)
+                    .order_by(
+                        "-evaluated_at",
+                        "-assessment__submitted_at",
+                        "-assessment__started_at",
+                    )
+                )
+                elig = elig_qs.first()
+
+                if elig is not None:
+                    loan_eligible = True
+                    latest_assessment_id = elig.assessment_id
+
+                    inst = elig.matched_instrument
+                    if inst:
+                        instrument_payload = {
+                            "id": inst.id,
+                            "name": inst.name,
+                        }
+
+                    sec_details = (elig.details or {}).get("sections", {}) if elig.details else {}
+                    impact_norm = (sec_details.get("IMPACT") or {}).get("normalized")
+                    risk_norm = (sec_details.get("RISK") or {}).get("normalized")
+                    return_norm = (sec_details.get("RETURN") or {}).get("normalized")
+
+                    scores_payload = {
+                        "overall": float(elig.overall_score) if elig.overall_score is not None else None,
+                        "sections": {
+                            "IMPACT": impact_norm,
+                            "RISK": risk_norm,
+                            "RETURN": return_norm,
+                        },
+                    }
+            except Exception as e:
+                logger.exception("Failed to enrich SPO retrieve with eligibility data for %s", spo_id)
+                # we still return base data, just without enrichment
+                # but we keep error structure consistent
+                return Response(
+                    {
+                        "message": "We could not fetch eligibility data for this SPO.",
+                        "errors": str(e),
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            # Inject enrichment fields (same as list)
+            data["loan_eligible"] = loan_eligible
+            data["instrument"] = instrument_payload
+            data["scores"] = scores_payload
+            data["assessment_id"] = latest_assessment_id
+
+            return Response(data, status=status.HTTP_200_OK)
+
         except Exception as e:
             logger.exception("Failed to retrieve SPO %s", kwargs.get(self.lookup_field))
             return Response(
-                {"message": "We could not fetch the SPO right now. Please try again later.", "errors": str(e)},
+                {
+                    "message": "We could not fetch the SPO right now. Please try again later.",
+                    "errors": str(e),
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 

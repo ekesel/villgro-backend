@@ -1,7 +1,7 @@
 # admin_portal/views_dashboard.py
 from datetime import datetime, timedelta
 from typing import Dict, Any, Tuple, List
-
+import logging
 from django.utils import timezone
 from django.db.models import Count
 from django.core.cache import cache
@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
-
+from django.utils.dateparse import parse_datetime
 from accounts.models import User
 from organizations.models import Organization, OnboardingProgress
 from assessments.models import Assessment
@@ -19,27 +19,28 @@ from assessments.services import compute_progress
 from admin_portal.permissions import IsAdminRole
 from admin_portal.models import ActivityLog
 
+logger = logging.getLogger(__name__)
 
 def _window_from_query(params) -> Tuple[datetime, datetime]:
-    """
-    Global filter: prefer explicit from/to (ISO 8601), else use ?days=N (default 7).
-    All in Django TZ (UTC in our project).
-    """
     tz_now = timezone.now()
     date_from = params.get("from")
     date_to = params.get("to")
+
     if date_from and date_to:
         try:
-            start = datetime.fromisoformat(date_from)
-            end = datetime.fromisoformat(date_to)
-            if timezone.is_naive(start):
-                start = timezone.make_aware(start, timezone=timezone.utc)
-            if timezone.is_naive(end):
-                end = timezone.make_aware(end, timezone=timezone.utc)
-            return (start, end)
+            start = parse_datetime(date_from)
+            end = parse_datetime(date_to)
+            if start and end:
+                # parse_datetime returns aware if offset/Z is present; otherwise naive
+                if timezone.is_naive(start):
+                    start = timezone.make_aware(start, timezone=timezone.utc)
+                if timezone.is_naive(end):
+                    end = timezone.make_aware(end, timezone=timezone.utc)
+                return (start, end)
         except Exception:
-            # fall back to days below if parse fails
+            # fall through to days logic
             pass
+
     days = int(params.get("days", 7) or 7)
     start = tz_now - timedelta(days=days)
     return (start, tz_now)
@@ -87,13 +88,14 @@ class AdminDashboardSummaryView(APIView):
 
     def get(self, request):
         try:
-            # cache per querystring for 60s
-            cache_key = f"admin-dashboard:{request.META.get('QUERY_STRING','')}"
-            cached = cache.get(cache_key)
-            if cached:
-                return Response(cached)
+            # # cache per querystring for 60s
+            # cache_key = f"admin-dashboard:{request.META.get('QUERY_STRING','')}"
+            # cached = cache.get(cache_key)
+            # if cached:
+            #     return Response(cached)
 
             win_from, win_to = _window_from_query(request.query_params)
+            logger.debug(f"AdminDashboardSummaryView: window from {win_from} to {win_to}")
 
             # ---------- KPI: SPOs (windowed) ----------
             spos_qs = User.objects.filter(
@@ -225,7 +227,7 @@ class AdminDashboardSummaryView(APIView):
                 "recent_activity": recent_activity,
             }
 
-            cache.set(cache_key, data, 60)
+            # cache.set(cache_key, data, 60)
             return Response(data)
         except Exception as e:
             return Response(

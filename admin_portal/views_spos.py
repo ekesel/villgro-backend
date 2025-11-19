@@ -77,7 +77,12 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
 
     @extend_schema(
         summary="List SPOs",
-        description="List Startup (SPO) users with search, status filter, date range, and ordering.",
+        description=(
+            "List Startup (SPO) users with search, status filter, date range, and ordering.\n\n"
+            "Each row is enriched with:\n"
+            "- `loan_eligible`: true if ANY eligible LoanEligibilityResult exists for the SPO's organization\n"
+            "- `instrument`: the latest eligible matched instrument (id + name), if present"
+        ),
         parameters=[
             OpenApiParameter(name="q", description="Search email / name / organization", required=False, type=str),
             OpenApiParameter(name="status", description="Filter by status: active | inactive", required=False, type=str),
@@ -112,15 +117,24 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                     "is_active": True,
                     "date_joined": "2025-10-01T10:15:00Z",
                     "loan_eligible": True,
-                    "organization": {"id": 7, "name": "GreenTech Pvt", "registration_type": "PRIVATE_LTD"}
+                    "instrument": {
+                        "id": 4,
+                        "name": "Commercial debt with impact linked incentives"
+                    },
+                    "organization": {
+                        "id": 7,
+                        "name": "GreenTech Pvt",
+                        "registration_type": "PRIVATE_LTD"
+                    }
                 }]
             )
         ],
     )
     def list(self, request, *args, **kwargs):
         """
-        Enrich paginated list with 'loan_eligible' computed flag:
-        True if ANY LoanEligibilityResult for this SPO's organization is eligible.
+        Enrich paginated list with:
+        - 'loan_eligible': True if ANY LoanEligibilityResult for this SPO's organization is eligible.
+        - 'instrument': latest eligible matched instrument (if any) for this SPO.
         """
         try:
             response = super().list(request, *args, **kwargs)
@@ -134,36 +148,48 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
             # Collect SPO user ids present on the page
             user_ids = [it.get("id") for it in items if isinstance(it, dict) and it.get("id")]
 
-            if user_ids:
-                # Aggregate any eligible result per SPO (via their organization.created_by_id)
-                agg = (
-                    LoanEligibilityResult.objects
-                    .filter(assessment__organization__created_by_id__in=user_ids)
-                    .values("assessment__organization__created_by_id")
-                    .annotate(
-                        any_eligible=Max(
-                            Case(
-                                When(is_eligible=True, then=1),
-                                default=0,
-                                output_field=IntegerField()
-                            )
-                        )
-                    )
-                )
-                elig_map = {row["assessment__organization__created_by_id"]: bool(row["any_eligible"]) for row in agg}
-            else:
-                elig_map = {}
+            elig_map = {}
+            inst_map = {}
 
-            # Inject the flag per row (default False)
+            if user_ids:
+                # Fetch all ELIGIBLE results for these SPOs, newest first
+                elig_qs = (
+                    LoanEligibilityResult.objects
+                    .select_related("matched_instrument", "assessment__organization__created_by")
+                    .filter(assessment__organization__created_by_id__in=user_ids, is_eligible=True)
+                    .order_by("-evaluated_at", "-assessment__submitted_at", "-assessment__started_at")
+                )
+
+                # For each SPO, keep the first (latest) eligible result
+                for elig in elig_qs:
+                    spo_id = elig.assessment.organization.created_by_id
+                    if spo_id in elig_map:
+                        continue  # already have latest for this SPO
+
+                    elig_map[spo_id] = True
+                    inst = elig.matched_instrument
+                    if inst:
+                        inst_map[spo_id] = {
+                            "id": inst.id,
+                            "name": inst.name,
+                        }
+                    else:
+                        inst_map[spo_id] = None
+
+            # Inject the flags per row (defaults)
             for it in items:
                 uid = it.get("id")
                 it["loan_eligible"] = bool(elig_map.get(uid, False))
+                it["instrument"] = inst_map.get(uid, None)
 
             return response
         except Exception as e:
             logger.exception("Failed to list SPO users")
             return Response(
-                {"message": "We could not fetch the SPO users right now. Please try again later.", "errors": str(e)},
+                {
+                    "message": "We could not fetch the SPO users right now. Please try again later.",
+                    "errors": str(e),
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 

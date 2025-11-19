@@ -81,7 +81,8 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
             "List Startup (SPO) users with search, status filter, date range, and ordering.\n\n"
             "Each row is enriched with:\n"
             "- `loan_eligible`: true if ANY eligible LoanEligibilityResult exists for the SPO's organization\n"
-            "- `instrument`: the latest eligible matched instrument (id + name), if present"
+            "- `instrument`: the latest eligible matched instrument (id + name), if present\n"
+            "- `scores`: summary of the latest eligible assessment (overall + IMPACT/RISK/RETURN section scores)"
         ),
         parameters=[
             OpenApiParameter(name="q", description="Search email / name / organization", required=False, type=str),
@@ -121,6 +122,14 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                         "id": 4,
                         "name": "Commercial debt with impact linked incentives"
                     },
+                    "scores": {
+                        "overall": 78.5,
+                        "sections": {
+                            "IMPACT": 82.0,
+                            "RISK": 25.0,
+                            "RETURN": 75.0
+                        }
+                    },
                     "organization": {
                         "id": 7,
                         "name": "GreenTech Pvt",
@@ -135,6 +144,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
         Enrich paginated list with:
         - 'loan_eligible': True if ANY LoanEligibilityResult for this SPO's organization is eligible.
         - 'instrument': latest eligible matched instrument (if any) for this SPO.
+        - 'scores': summary (overall + IMPACT/RISK/RETURN) of the latest eligible assessment.
         """
         try:
             response = super().list(request, *args, **kwargs)
@@ -150,6 +160,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
 
             elig_map = {}
             inst_map = {}
+            scores_map = {}
 
             if user_ids:
                 # Fetch all ELIGIBLE results for these SPOs, newest first
@@ -157,16 +168,25 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                     LoanEligibilityResult.objects
                     .select_related("matched_instrument", "assessment__organization__created_by")
                     .filter(assessment__organization__created_by_id__in=user_ids, is_eligible=True)
-                    .order_by("-evaluated_at", "-assessment__submitted_at", "-assessment__started_at")
+                    .order_by(
+                        "-evaluated_at",
+                        "-assessment__submitted_at",
+                        "-assessment__started_at",
+                    )
                 )
 
-                # For each SPO, keep the first (latest) eligible result
                 for elig in elig_qs:
-                    spo_id = elig.assessment.organization.created_by_id
+                    org = getattr(elig.assessment, "organization", None)
+                    if not org:
+                        continue
+                    spo_id = org.created_by_id
                     if spo_id in elig_map:
-                        continue  # already have latest for this SPO
+                        # already have the latest one for this SPO
+                        continue
 
                     elig_map[spo_id] = True
+
+                    # Instrument payload
                     inst = elig.matched_instrument
                     if inst:
                         inst_map[spo_id] = {
@@ -176,11 +196,27 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                     else:
                         inst_map[spo_id] = None
 
+                    # Scores payload (from eligibility details)
+                    sec_details = (elig.details or {}).get("sections", {}) if elig.details else {}
+                    impact_norm = (sec_details.get("IMPACT") or {}).get("normalized")
+                    risk_norm = (sec_details.get("RISK") or {}).get("normalized")
+                    return_norm = (sec_details.get("RETURN") or {}).get("normalized")
+
+                    scores_map[spo_id] = {
+                        "overall": float(elig.overall_score) if elig.overall_score is not None else None,
+                        "sections": {
+                            "IMPACT": impact_norm,
+                            "RISK": risk_norm,
+                            "RETURN": return_norm,
+                        },
+                    }
+
             # Inject the flags per row (defaults)
             for it in items:
                 uid = it.get("id")
                 it["loan_eligible"] = bool(elig_map.get(uid, False))
                 it["instrument"] = inst_map.get(uid, None)
+                it["scores"] = scores_map.get(uid, None)
 
             return response
         except Exception as e:

@@ -163,6 +163,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
             elig_map = {}
             inst_map = {}
             scores_map = {}
+            latest_assessment_map = {}
 
             if user_ids:
                 # Fetch all ELIGIBLE results for these SPOs, newest first
@@ -183,10 +184,11 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                         continue
                     spo_id = org.created_by_id
                     if spo_id in elig_map:
-                        # already have the latest one for this SPO
-                        continue
+                        continue  # already have latest one
 
                     elig_map[spo_id] = True
+
+                    latest_assessment_map[spo_id] = elig.assessment_id
 
                     # Instrument payload
                     inst = elig.matched_instrument
@@ -219,6 +221,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                 it["loan_eligible"] = bool(elig_map.get(uid, False))
                 it["instrument"] = inst_map.get(uid, None)
                 it["scores"] = scores_map.get(uid, None)
+                it["assessment_id"] = latest_assessment_map.get(uid, None)
 
             return response
         except Exception as e:

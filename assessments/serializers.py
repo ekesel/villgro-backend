@@ -21,14 +21,27 @@ def _normalize(value: float | int | None, lo: float, hi: float) -> float | None:
 class AssessmentSerializer(serializers.ModelSerializer):
     graph = serializers.SerializerMethodField()
     sector = serializers.CharField(source="organization.focus_sector", read_only=True)
+    instrument = serializers.SerializerMethodField()
 
     class Meta:
         model = Assessment
         fields = [
             "id", "status", "started_at", "submitted_at",
-            "cooldown_until", "progress", "scores", "graph", "sector"
+            "cooldown_until", "progress", "scores", "graph", "sector", "instrument"
         ]
 
+    def get_instrument(self, obj: Assessment):
+        """
+        Returns the matched loan instrument from LoanEligibilityResult, if any.
+        Shape is kept simple for frontend use.
+        """
+        elig = getattr(obj, "loan_eligibility", None)
+        inst = getattr(elig, "matched_instrument", None) if elig else None
+        if not inst:
+            return None
+
+        return inst.name
+    
     def get_graph(self, obj: Assessment) -> dict:
         """
         Normalized Risk–Return–Impact graph payload for frontend visualization.

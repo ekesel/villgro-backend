@@ -11,6 +11,7 @@ from admin_portal.permissions import IsAdminRole
 from admin_portal.serializers import (
     AdminSPOListSerializer, AdminSPOCreateSerializer, AdminSPOUpdateSerializer
 )
+from django.utils.dateparse import parse_date
 from django.db.models import Q
 from weasyprint import HTML
 from django.template.loader import render_to_string
@@ -35,10 +36,12 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
             .select_related("organization")
         )
 
+        # Status filter
         status_param = self.request.query_params.get("status")
         if status_param in ("active", "inactive"):
             qs = qs.filter(is_active=(status_param == "active"))
 
+        # Search filter
         q = self.request.query_params.get("q")
         if q:
             qs = qs.filter(
@@ -48,8 +51,20 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                 | Q(organization__name__icontains=q)
             )
 
+        # Date range filter (by date_joined DATE)
+        start_date_str = self.request.query_params.get("start_date")
+        end_date_str = self.request.query_params.get("end_date")
+        start_date = parse_date(start_date_str) if start_date_str else None
+        end_date = parse_date(end_date_str) if end_date_str else None
+
+        if start_date:
+            qs = qs.filter(date_joined__date__gte=start_date)
+        if end_date:
+            qs = qs.filter(date_joined__date__lte=end_date)
+
+        # Ordering
         ordering = self.request.query_params.get("ordering") or "-date_joined"
-        allowed = {"email","-email","first_name","-first_name","date_joined","-date_joined"}
+        allowed = {"email", "-email", "first_name", "-first_name", "date_joined", "-date_joined"}
         qs = qs.order_by(ordering if ordering in allowed else "-date_joined")
         return qs
 
@@ -62,10 +77,22 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
 
     @extend_schema(
         summary="List SPOs",
-        description="List Startup (SPO) users with search, status filter, and ordering.",
+        description="List Startup (SPO) users with search, status filter, date range, and ordering.",
         parameters=[
             OpenApiParameter(name="q", description="Search email / name / organization", required=False, type=str),
             OpenApiParameter(name="status", description="Filter by status: active | inactive", required=False, type=str),
+            OpenApiParameter(
+                name="start_date",
+                description="Filter SPOs by joined date (YYYY-MM-DD, inclusive start)",
+                required=False,
+                type=str,
+            ),
+            OpenApiParameter(
+                name="end_date",
+                description="Filter SPOs by joined date (YYYY-MM-DD, inclusive end)",
+                required=False,
+                type=str,
+            ),
             OpenApiParameter(
                 name="ordering",
                 description="Sort by: email, -email, first_name, -first_name, date_joined, -date_joined",

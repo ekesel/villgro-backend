@@ -221,23 +221,58 @@ class AdminDashboardSummaryView(APIView):
 
             # ---------- Sector distribution ----------
             active_spo_ids = spos_qs.values_list("id", flat=True)
+
+            # Fetch all organizations for active SPOs (including null sectors)
             orgs = Organization.objects.filter(
                 created_by_id__in=active_spo_ids,
-                focus_sector__isnull=False,
             )
-            sector_counts = (
+
+            sector_counts_raw = (
                 orgs.values("focus_sector")
                     .annotate(count=Count("id"))
                     .order_by()
             )
-            total_orgs = sum(row["count"] for row in sector_counts) or 1
+
+            # Prepare merged bucket list
+            cleaned = []
+            null_count = 0
+            others_index = None
+
+            for idx, row in enumerate(sector_counts_raw):
+                key = row["focus_sector"]
+                count = row["count"]
+
+                if key is None:
+                    null_count += count
+                    continue
+
+                if key.upper() == "OTHERS":
+                    others_index = idx
+                    cleaned.append({"key": "OTHERS", "count": count})
+                else:
+                    cleaned.append({"key": key, "count": count})
+
+            # Merge NULL count into OTHERS
+            if null_count > 0:
+                if any(item["key"] == "OTHERS" for item in cleaned):
+                    # Add nulls to existing OTHERS
+                    for item in cleaned:
+                        if item["key"] == "OTHERS":
+                            item["count"] += null_count
+                            break
+                else:
+                    # Create OTHERS bucket
+                    cleaned.append({"key": "OTHERS", "count": null_count})
+
+            # Final percent computation
+            total_orgs = sum(item["count"] for item in cleaned) or 1
             sector_distribution = [
                 {
-                    "key": row["focus_sector"],
-                    "count": row["count"],
-                    "percent": _safe_div(row["count"], total_orgs),
+                    "key": item["key"],
+                    "count": item["count"],
+                    "percent": _safe_div(item["count"], total_orgs),
                 }
-                for row in sector_counts
+                for item in cleaned
             ]
 
             # ---------- Recent activity (empty per SOW for now) ----------

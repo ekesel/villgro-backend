@@ -20,7 +20,7 @@ from assessments.models import Assessment
 from questionnaires.models import LoanEligibilityResult
 from django.shortcuts import get_object_or_404
 from questionnaires.models import LoanEligibilityResult, Section, Question
-from questionnaires.logic import build_answers_map
+from assessments.services import build_answers_map
 
 logger = logging.getLogger(__name__)
 

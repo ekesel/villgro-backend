@@ -194,7 +194,7 @@ class AdminDashboardSummaryView(APIView):
                 {
                     "key": row["focus_sector"],
                     "count": row["count"],
-                    "percent": round(_safe_div(row["count"], total_orgs) * 100.0, 2),
+                    "percent": _safe_div(row["count"], total_orgs),
                 }
                 for row in sector_counts
             ]

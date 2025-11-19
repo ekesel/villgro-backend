@@ -18,7 +18,9 @@ from django.template.loader import render_to_string
 from django.utils.timezone import localtime
 from assessments.models import Assessment
 from questionnaires.models import LoanEligibilityResult
-from django.db.models import Prefetch, Max, Case, When, IntegerField
+from django.shortcuts import get_object_or_404
+from questionnaires.models import LoanEligibilityResult, Section, Question
+from questionnaires.logic import build_answers_map
 
 logger = logging.getLogger(__name__)
 
@@ -589,3 +591,199 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
             return Response({"message": "Unable to list assessments.", "errors": str(e)}, status=500)
 
         return Response(data, status=200)
+    
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path=r"assessments/(?P<assessment_id>\d+)/qa",
+    )
+    @extend_schema(
+        summary="View questions and answers for a specific assessment (Admin)",
+        description=(
+            "For a given SPO (path param) and assessment id (in URL), "
+            "returns all sections, questions and the SPO's answers for that assessment.\n\n"
+            "The assessment is constrained to the SPO's organization."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="assessment_id",
+                required=True,
+                type=int,
+                description="ID of the assessment belonging to this SPO's organization"
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                description="Questions and answers for the assessment",
+                examples=[
+                    OpenApiExample(
+                        "QA payload (truncated)",
+                        value={
+                            "assessment_id": 123,
+                            "status": "SUBMITTED",
+                            "started_at": "2025-09-24T10:30:00Z",
+                            "submitted_at": "2025-09-24T11:05:00Z",
+                            "sections": [
+                                {
+                                    "code": "IMPACT",
+                                    "name": "Impact",
+                                    "questions": [
+                                        {
+                                            "code": "Q_1763437992691",
+                                            "text": "What is the impact on access to the product/service for the target group?",
+                                            "type": "SINGLE_CHOICE",
+                                            "answer": {
+                                                "value": "HIGH"
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        response_only=True,
+                    )
+                ],
+            ),
+            404: OpenApiResponse(description="SPO, Organization, or Assessment not found"),
+        },
+    )
+    def assessment_qa(self, request, pk=None, assessment_id=None):
+        """
+        GET /api/admin/spos/{spo_id}/assessments/{assessment_id}/qa/
+
+        Returns structured list of sections -> questions -> answers
+        for the specified assessment, scoped to this SPO's organization.
+        """
+        try:
+            try:
+                spo = self.get_object()
+            except Http404:
+                logger.info("SPO not found for assessment QA: spo_id=%s", pk)
+                return Response(
+                    {"message": "SPO not found.", "errors": {}},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            except Exception as e:
+                logger.exception("Failed to fetch SPO for assessment QA: spo_id=%s", pk)
+                return Response(
+                    {
+                        "message": "We could not fetch the SPO right now. Please try again later.",
+                        "errors": str(e),
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            org = getattr(spo, "organization", None)
+            if not org:
+                logger.info("Organization not found for SPO %s when fetching assessment QA", pk)
+                return Response(
+                    {"message": "Organization not found.", "errors": {}},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            # Ensure the assessment belongs to this SPO's organization
+            try:
+                assessment = get_object_or_404(
+                    Assessment,
+                    id=assessment_id,
+                    organization=org,
+                )
+            except Http404:
+                logger.info(
+                    "Assessment %s not found for SPO %s (org=%s)",
+                    assessment_id, pk, org.id
+                )
+                return Response(
+                    {"message": "Assessment not found for this SPO.", "errors": {}},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            except Exception as e:
+                logger.exception(
+                    "Failed to fetch Assessment %s for SPO %s",
+                    assessment_id, pk
+                )
+                return Response(
+                    {
+                        "message": "We could not fetch the assessment right now. Please try again later.",
+                        "errors": str(e),
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            # Build answer map using existing logic helper
+            try:
+                answers_map = build_answers_map(assessment)  # { "Q_CODE": {...raw answer...}, ... }
+            except Exception as e:
+                logger.exception(
+                    "Failed to build answers map for Assessment %s (SPO %s)",
+                    assessment_id, pk
+                )
+                return Response(
+                    {
+                        "message": "We could not load answers for this assessment.",
+                        "errors": str(e),
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            # Build sections -> questions -> answers payload
+            sections_payload = []
+            try:
+                sections = Section.objects.all().order_by("order")
+                for sec in sections:
+                    # Only include questions from this section
+                    questions = (
+                        Question.objects
+                        .filter(section=sec, is_active=True)
+                        .order_by("order")
+                    )
+
+                    q_payload = []
+                    for q in questions:
+                        q_payload.append({
+                            "code": q.code,
+                            "text": q.text,
+                            "type": q.type,
+                            "answer": answers_map.get(q.code),  # raw stored answer dict or None
+                        })
+
+                    if q_payload:
+                        sections_payload.append({
+                            "code": sec.code,
+                            "name": sec.name,
+                            "questions": q_payload,
+                        })
+            except Exception as e:
+                logger.exception(
+                    "Failed to build QA payload for Assessment %s (SPO %s)",
+                    assessment_id, pk
+                )
+                return Response(
+                    {
+                        "message": "We could not build the questions and answers view.",
+                        "errors": str(e),
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            out = {
+                "assessment_id": assessment.id,
+                "status": assessment.status,
+                "started_at": assessment.started_at,
+                "submitted_at": assessment.submitted_at,
+                "sections": sections_payload,
+            }
+            return Response(out, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.exception(
+                "Unexpected error in assessment_qa for SPO %s, assessment %s",
+                pk, assessment_id
+            )
+            return Response(
+                {
+                    "message": "We could not fetch the assessment questions right now. Please try again later.",
+                    "errors": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

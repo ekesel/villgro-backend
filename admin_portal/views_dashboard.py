@@ -1,5 +1,5 @@
 # admin_portal/views_dashboard.py
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from typing import Dict, Any, Tuple, List
 import logging
 from django.utils import timezone
@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
-from django.utils.dateparse import parse_datetime
+from django.utils.dateparse import parse_datetime, parse_date
 from accounts.models import User
 from organizations.models import Organization, OnboardingProgress
 from assessments.models import Assessment
@@ -22,27 +22,54 @@ from admin_portal.models import ActivityLog
 logger = logging.getLogger(__name__)
 
 def _window_from_query(params) -> Tuple[datetime, datetime]:
+    """
+    Global filter: prefer explicit from/to (ISO 8601), else use ?days=N (default 7).
+    Supports:
+      - full datetimes: 2025-09-10T00:00:00 or 2025-09-10 00:00:00
+      - date-only:      2025-09-10 (interpreted as start_of_day / end_of_day)
+      - timezone suffixes like 'Z' or '+00:00' (handled by parse_datetime)
+    All returned datetimes are timezone-aware (UTC).
+    """
     tz_now = timezone.now()
     date_from = params.get("from")
     date_to = params.get("to")
 
+    logger.info("AdminDashboardSummaryView: raw window params from=%r to=%r", date_from, date_to)
+
     if date_from and date_to:
         try:
+            # Try full datetime first
             start = parse_datetime(date_from)
             end = parse_datetime(date_to)
+
+            # Fallback: allow date-only strings (YYYY-MM-DD)
+            if start is None:
+                d_from = parse_date(date_from)
+                if d_from is not None:
+                    start = datetime.combine(d_from, time.min)
+
+            if end is None:
+                d_to = parse_date(date_to)
+                if d_to is not None:
+                    # treat "to" as end of day
+                    end = datetime.combine(d_to, time.max)
+
+            logger.info("AdminDashboardSummaryView: parsed window start=%r end=%r", start, end)
+
             if start and end:
-                # parse_datetime returns aware if offset/Z is present; otherwise naive
                 if timezone.is_naive(start):
                     start = timezone.make_aware(start, timezone=timezone.utc)
                 if timezone.is_naive(end):
                     end = timezone.make_aware(end, timezone=timezone.utc)
                 return (start, end)
-        except Exception:
-            # fall through to days logic
-            pass
+        except Exception as exc:
+            logger.warning("AdminDashboardSummaryView: failed to parse from/to (%r, %r): %s",
+                           date_from, date_to, exc)
 
+    # Fallback: last N days
     days = int(params.get("days", 7) or 7)
     start = tz_now - timedelta(days=days)
+    logger.info("AdminDashboardSummaryView: using fallback window days=%s -> %s .. %s", days, start, tz_now)
     return (start, tz_now)
 
 

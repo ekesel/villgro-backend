@@ -149,7 +149,7 @@ def _snapshot(instance):
 # ---------------- handlers ----------------
 @receiver(pre_save)
 def capture_pre_save(sender, instance, **kwargs):
-    if not (AUDIT_READY and _db_ready() and _should_log_sender(sender)):
+    if not (_should_log_sender(sender)):
         return
     # ignore our own model
     if sender is ActivityLog: return
@@ -166,7 +166,7 @@ def capture_pre_save(sender, instance, **kwargs):
 @receiver(post_save)
 def log_post_save(sender, instance, created, **kwargs):
     logger.info("post_save signal received for %s (created=%s)", instance, created)
-    if not (AUDIT_READY and _db_ready() and _should_log_sender(sender)):
+    if not (_should_log_sender(sender)):
         logger.info("Audit not ready or DB not ready or sender not to be logged")
         return
     if sender is ActivityLog: return
@@ -237,7 +237,7 @@ def log_post_save(sender, instance, created, **kwargs):
 
 @receiver(post_delete)
 def log_post_delete(sender, instance, **kwargs):
-    if not (AUDIT_READY and _db_ready() and _should_log_sender(sender)):
+    if not (_should_log_sender(sender)):
         return
     if sender is ActivityLog: return
 
@@ -276,7 +276,7 @@ def log_post_delete(sender, instance, **kwargs):
 
 @receiver(m2m_changed)
 def log_m2m(sender, instance, action, reverse, model, pk_set, **kwargs):
-    if not (AUDIT_READY and _db_ready() and _should_log_sender(sender)):
+    if not (_should_log_sender(sender)):
         return
     try:
         # Only log add/remove (not pre/post clear separately)

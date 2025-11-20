@@ -15,7 +15,7 @@ from accounts.serializers import SPOSignupStartSerializer, SPOProfileCompleteSer
     ProfileSerializer, ProfileUpdateSerializer, ChangePasswordSerializer
 
 from organizations.utils import get_or_create_progress
-
+from questionnaires.utils import _build_validation_message
 logger = logging.getLogger(__name__)
 
 class SPOSignupStartView(APIView):
@@ -220,7 +220,7 @@ class LoginView(TokenObtainPairView):
             # Example: missing fields / invalid serializer input
             return Response(
                 {
-                    "message": "Please fix the highlighted fields.",
+                    "message": _build_validation_message(exc.detail),
                     "errors": exc.detail,
                 },
                 status=status.HTTP_400_BAD_REQUEST,
@@ -345,7 +345,7 @@ class ResetPasswordView(APIView):
         except ValidationError as exc:
             logger.info("Reset password validation failed: %s", exc.detail)
             return Response(
-                {"message": "Please fix the highlighted fields.", "errors": exc.detail},
+                {"message": _build_validation_message(exc.detail), "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except Exception as e:
@@ -438,7 +438,7 @@ class ChangePasswordView(APIView):
             ser.is_valid(raise_exception=True)
         except ValidationError as exc:
             details = exc.detail if isinstance(exc.detail, dict) else {"non_field_errors": exc.detail}
-            payload = {"message": "Please fix the highlighted fields.", "errors": details}
+            payload = {"message": _build_validation_message(exc.detail), "errors": details}
             return Response(payload, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.exception("Unexpected error validating change password payload for user %s", request.user.id)

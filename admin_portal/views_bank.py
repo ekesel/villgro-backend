@@ -9,7 +9,7 @@ from rest_framework.exceptions import ValidationError
 from admin_portal.permissions import IsAdminRole
 from admin_portal.serializers import BankAdminSerializer
 from banks.models import Bank
-
+from questionnaires.utils import _build_validation_message
 @extend_schema(tags=["Admin • Banks"])
 class BankAdminViewSet(viewsets.ModelViewSet):
     """
@@ -163,7 +163,7 @@ class BankAdminViewSet(viewsets.ModelViewSet):
             return super().create(request, *args, **kwargs)
         except ValidationError as exc:
             return Response(
-                {"message": "Please fix the highlighted fields.", "errors": exc.detail},
+                {"message": _build_validation_message(exc.detail), "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except Exception as e:
@@ -191,7 +191,7 @@ class BankAdminViewSet(viewsets.ModelViewSet):
             # cleanly return serializer validation errors
             return Response(
                 {
-                    "message": "Please fix the highlighted fields.",
+                    "message": _build_validation_message(exc.detail),
                     "errors": exc.detail,
                 },
                 status=status.HTTP_400_BAD_REQUEST,

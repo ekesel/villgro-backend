@@ -11,7 +11,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 from admin_portal.permissions import IsAdminRole
 from admin_portal.serializers import AdminUserSerializerLite, AdminUserCreateSerializer
 from rest_framework.pagination import PageNumberPagination
-
+from questionnaires.utils import _build_validation_message
 logger = logging.getLogger(__name__)
 
 class AdminPage(PageNumberPagination):
@@ -72,7 +72,7 @@ class AdminUsersViewSet(viewsets.ModelViewSet):
         except ValidationError as exc:
             logger.info("Admin create validation failed for %s: %s", request.data.get("email"), exc.detail)
             return Response(
-                {"message": "Please fix the highlighted fields.", "errors": exc.detail},
+                {"message":  _build_validation_message(exc.detail), "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except Exception as e:
@@ -129,7 +129,7 @@ class AdminUsersViewSet(viewsets.ModelViewSet):
         except ValidationError as exc:
             logger.info("Admin user update validation failed for %s: %s", u.pk, exc.detail)
             return Response(
-                {"message": "Please fix the highlighted fields.", "errors": exc.detail},
+                {"message": _build_validation_message(exc.detail), "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except Exception as e:

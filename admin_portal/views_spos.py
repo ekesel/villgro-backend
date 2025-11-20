@@ -21,7 +21,7 @@ from questionnaires.models import LoanEligibilityResult
 from django.shortcuts import get_object_or_404
 from questionnaires.models import LoanEligibilityResult, Section, Question
 from assessments.services import build_answers_map
-
+from questionnaires.utils import _build_validation_message
 logger = logging.getLogger(__name__)
 
 @extend_schema(tags=["Admin • SPOs"])
@@ -267,7 +267,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
             except ValidationError as exc:
                 logger.info("Admin SPO create validation failed for %s: %s", request.data.get("email"), exc.detail)
                 return Response(
-                    {"message": "Please fix the highlighted fields.", "errors": exc.detail},
+                    {"message":  _build_validation_message(exc.detail), "errors": exc.detail},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             except Exception as e:
@@ -453,7 +453,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
         except ValidationError as exc:
             logger.info("Admin SPO update validation failed for %s: %s", kwargs.get(self.lookup_field), exc.detail)
             return Response(
-                {"message": "Please fix the highlighted fields.", "errors": exc.detail},
+                {"message":  _build_validation_message(exc.detail), "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except Http404:
@@ -477,7 +477,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
         except ValidationError as exc:
             logger.info("Admin SPO partial update validation failed for %s: %s", kwargs.get(self.lookup_field), exc.detail)
             return Response(
-                {"message": "Please fix the highlighted fields.", "errors": exc.detail},
+                {"message":  _build_validation_message(exc.detail), "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except Http404:

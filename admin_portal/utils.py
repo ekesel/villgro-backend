@@ -1,15 +1,5 @@
-from admin_portal.models import AuditLog
 from datetime import date, datetime
 from django.utils import timezone
-
-def audit(actor, action, target, before=None, after=None):
-    AuditLog.objects.create(
-        actor=actor,
-        action=action,
-        target_model=target.__class__.__name__,
-        target_id=str(getattr(target, "pk", "")),
-        changes={"before": before or {}, "after": after or {}},
-    )
 
 def _format_human_datetime(value):
     """

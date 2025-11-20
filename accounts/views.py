@@ -108,6 +108,16 @@ class SPOSignupCompleteView(APIView):
         user = request.user
         instance = getattr(user, "organization", None)
 
+        first_name = request.data.pop("first_name", "")
+        last_name = request.data.pop("last_name", "")
+        phone_number = request.data.pop("phone_number", "")
+
+        if user:
+            user.first_name = first_name
+            user.last_name = last_name
+            user.phone = phone_number
+            user.save(update_fields=["first_name", "last_name", "phone"])
+
         # partial=True when updating existing org (accepts partial updates on POST)
         serializer = SPOProfileCompleteSerializer(
             instance=instance,
@@ -160,6 +170,13 @@ class SPOSignupCompleteView(APIView):
                     "current_step": prog.current_step,
                     "is_complete": prog.is_complete,
                 },
+                "user": {
+                    "email": user.email,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "role": user.role,
+                    "phone_number": user.phone,
+                }
             },
             status=status_code,
         )

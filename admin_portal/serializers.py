@@ -4,6 +4,7 @@ from accounts.models import User
 from questionnaires.models import (
     Section, Question, AnswerOption, QuestionDimension, BranchingCondition
 )
+import re
 from banks.models import Bank
 from organizations.models import Organization
 from django.db.models import Sum
@@ -267,6 +268,16 @@ class BankAdminSerializer(serializers.ModelSerializer):
             "created_at", "updated_at", "password",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_contact_phone(self, value):
+        """
+            E.164 format: +<country_code><number>
+            Example: +14155552671
+        """
+        pattern = r'^\+\d{7,15}$'
+        if not re.match(pattern, value):
+            raise serializers.ValidationError("Enter a valid phone number in E.164 format (e.g., +14155552671).")
+        return value
 
     def validate_contact_email(self, v):
         qs = User.objects.filter(email__iexact=v)

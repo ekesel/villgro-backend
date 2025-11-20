@@ -889,7 +889,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                     if q_payload:
                         sections_payload.append({
                             "code": sec.code,
-                            "name": sec.name,
+                            "name": sec.title,
                             "questions": q_payload,
                         })
             except Exception as e:

@@ -186,9 +186,24 @@ class BankAdminViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         try:
             return super().update(request, *args, **kwargs)
-        except Exception as e:
+
+        except ValidationError as exc:
+            # cleanly return serializer validation errors
             return Response(
-                {"message": "We could not update the bank right now. Please try again later.", "errors": str(e)},
+                {
+                    "message": "Please fix the highlighted fields.",
+                    "errors": exc.detail,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        except Exception as e:
+            # fallback for unexpected errors
+            return Response(
+                {
+                    "message": "We could not update the bank right now. Please try again later.",
+                    "errors": str(e),
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 

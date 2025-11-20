@@ -10,6 +10,7 @@ from django.db import connection
 from django.conf import settings
 from django.db.utils import OperationalError, ProgrammingError
 from django.utils.functional import Promise
+from admin_portal.utils import _format_human_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +207,8 @@ def log_post_save(sender, instance, created, **kwargs):
                     if field in SENSITIVE_FIELDS:
                         diffs[field] = {"from": "***", "to": "***", "label": _field_verbose(instance, field)}
                     else:
+                        old_val = _format_human_datetime(old_val)
+                        new_val = _format_human_datetime(new_val)
                         diffs[field] = {
                             "from": old_val,
                             "to": new_val,

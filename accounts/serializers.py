@@ -4,7 +4,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from datetime import datetime
 from accounts.models import User
-
+from banks.models import Bank
 from organizations.models import Organization
 from accounts.models import PasswordResetCode
 from accounts.emails import send_password_reset_email
@@ -108,6 +108,19 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         user: User = self.user
         prog = get_or_create_progress(user)
+
+        if user.role == User.Role.BANK_USER:
+            # Ensure bank user is linked to a bank
+            if Bank.objects.filter(user_id=user.id).exists() is False:
+                raise serializers.ValidationError("User is not associated with any bank.")
+            else:
+                bank: Bank = Bank.objects.get(user_id=user.id)
+                if bank.status != Bank.Status.ACTIVE:
+                    raise serializers.ValidationError("User is associated with an inactive bank.")
+        
+        if user.is_active is False:
+            raise serializers.ValidationError("User account is inactive.")
+
         # enrich response
         data["user"] = {
             "email": user.email,

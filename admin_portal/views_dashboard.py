@@ -173,6 +173,8 @@ class AdminDashboardSummaryView(APIView):
                     updated_at__gte=win_from, updated_at__lte=win_to,
                     user__role=User.Role.SPO,
                     user__is_active=True,
+                    user__date_joined__gte=win_from,
+                    user__date_joined__lte=win_to,
                 ).count()
             except Exception:
                 # Fallback: orgs with step-2 fields and creator in window

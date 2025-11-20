@@ -218,7 +218,7 @@ def log_post_save(sender, instance, created, **kwargs):
                 msgs = []
                 for f, d in diffs.items():
                     label = d.get("label") or f
-                    msgs.append(f"{label} changed from “{d['from']}” to “{d['to']}”")
+                    msgs.append(f"{label} field changed from “{d['from']}” to “{d['to']}”")
                 help_text = f"Updated {app_label}.{model} “{_short_repr(instance)}”: " + "; ".join(msgs)
                 ActivityLog.objects.create(
                     actor=actor,

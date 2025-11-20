@@ -5,7 +5,7 @@ from django.db.models import Q
 from drf_spectacular.utils import (
     extend_schema, OpenApiParameter, OpenApiResponse, OpenApiExample
 )
-
+from rest_framework.exceptions import ValidationError
 from admin_portal.permissions import IsAdminRole
 from admin_portal.serializers import BankAdminSerializer
 from banks.models import Bank
@@ -161,10 +161,15 @@ class BankAdminViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         try:
             return super().create(request, *args, **kwargs)
+        except ValidationError as exc:
+            return Response(
+                {"message": "Please fix the highlighted fields.", "errors": exc.detail},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except Exception as e:
             return Response(
                 {"message": "We could not create the bank right now. Please try again later.", "errors": str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     @extend_schema(summary="Retrieve bank", responses={200: BankAdminSerializer})

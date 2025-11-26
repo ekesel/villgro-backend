@@ -18,6 +18,8 @@ class BankSPOListItemSerializer(serializers.Serializer):
     org_created_at = serializers.DateTimeField(allow_null=True)
     last_assessment_submitted_at = serializers.DateTimeField(allow_null=True)
     last_loan_request_submitted_at = serializers.DateTimeField(allow_null=True)
+    instrument = serializers.JSONField(read_only=True, allow_null=True)
+    scores = serializers.JSONField(read_only=True, allow_null=True)
 
 
 class BankSPODetailAssessmentSerializer(serializers.Serializer):

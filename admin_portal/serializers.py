@@ -269,6 +269,15 @@ class BankAdminSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    
+    def validate(self, attrs):
+        # On create, password is mandatory
+        if self.instance is None and not attrs.get("password"):
+            raise serializers.ValidationError({
+                "password": "This field is required."
+            })
+        return super().validate(attrs)
+
     def validate_contact_phone(self, value):
         """
             E.164 format: +<country_code><number>
@@ -314,6 +323,47 @@ class BankAdminSerializer(serializers.ModelSerializer):
         # 2) create Bank and link user
         bank = Bank.objects.create(user=user, **validated_data)
         return bank
+    
+    def update(self, instance, validated_data):
+        """
+        Update Bank + its linked BANK_USER.
+        - If password is provided, update the User's password.
+        - If contact_email/person/phone change, also update the User.
+        """
+        # Pop fields meant for User
+        new_email = validated_data.get("contact_email", instance.contact_email)
+        new_person = validated_data.get("contact_person", instance.contact_person)
+        new_phone = validated_data.get("contact_phone", instance.contact_phone)
+        new_password = validated_data.pop("password", None)
+
+        user = getattr(instance, "user", None)
+
+        # Sync to User if present
+        if user:
+            # Email
+            if new_email and new_email != user.email:
+                user.email = new_email
+
+            # First name
+            if new_person and new_person != user.first_name:
+                user.first_name = new_person
+
+            # Phone
+            if new_phone and new_phone != user.phone:
+                user.phone = new_phone
+
+            # Password
+            if new_password:
+                user.set_password(new_password)
+
+            user.save()
+
+        # Normal Bank fields update (everything except password)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        return instance
 
 class AdminSPOOrgSerializer(serializers.ModelSerializer):
     class Meta:

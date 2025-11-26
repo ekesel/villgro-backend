@@ -110,7 +110,7 @@ class SPOSignupCompleteView(APIView):
 
         first_name = request.data.pop("first_name", "")
         last_name = request.data.pop("last_name", "")
-        phone_number = request.data.pop("phone_number", "")
+        phone_number = request.data.pop("phone", "")
 
         if user:
             user.first_name = first_name

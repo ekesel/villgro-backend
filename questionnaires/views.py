@@ -138,14 +138,14 @@ class LoanRequestViewSet(
             org: Organization = a.organization
             org_snapshot = {
                 "name": org.name,
-                "date_of_incorporation": getattr(org, "incorporation_date", None),
-                "dpiit_number": getattr(org, "dpiit_number", None),
+                "date_of_incorporation": getattr(org, "date_of_incorporation", None),
+                "dpiit_number": getattr(org, "gst_number", None),
                 "legal_registration_type": getattr(org, "registration_type", None),
-                "cin_number": getattr(org, "cin", None),
-                "poc_email": getattr(org, "poc_email", None),
-                "focus_area": getattr(org, "focus_area", None),
-                "company_type": getattr(org, "company_type", None),
-                "annual_operating_budget": getattr(org, "annual_budget", None),
+                "cin_number": getattr(org, "cin_number", None),
+                "poc_email": getattr(org.created_by, "email", None),
+                "focus_area": getattr(org, "focus_sector", None),
+                "company_type": getattr(org, "type_of_innovation", None),
+                "annual_operating_budget": getattr(org, "annual_operating_budget", None),
                 "geo_scope": getattr(org, "geo_scope", None),
             }
             return Response({

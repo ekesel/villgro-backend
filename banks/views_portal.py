@@ -45,7 +45,9 @@ class BankSPOViewSet(viewsets.ViewSet):
             "- `date_joined` (also filterable via `joined_from`, `joined_to`)\n"
             "- `organization_name`, `focus_sector` (from Organization)\n"
             "- `org_created_at` (if model has it; else null)\n"
-            "- `last_assessment_submitted_at`, `last_loan_request_submitted_at`\n\n"
+            "- `last_assessment_submitted_at`, `last_loan_request_submitted_at`\n"
+            "- `instrument`: latest eligible matched instrument (if any)\n"
+            "- `scores`: latest eligible eligibility scores (overall + IMPACT/RISK/RETURN)\n\n"
             "**Filters** (all optional):\n"
             "- `q`: search email/name/organization\n"
             "- `sector`: exact match on organization.focus_sector\n"
@@ -79,7 +81,19 @@ class BankSPOViewSet(viewsets.ViewSet):
                     "focus_sector": "AGRICULTURE",
                     "org_created_at": "2025-09-15T08:00:00Z",
                     "last_assessment_submitted_at": "2025-10-20T09:00:00Z",
-                    "last_loan_request_submitted_at": "2025-10-21T11:30:00Z"
+                    "last_loan_request_submitted_at": "2025-10-21T11:30:00Z",
+                    "instrument": {
+                        "id": 4,
+                        "name": "Commercial debt with impact linked incentives"
+                    },
+                    "scores": {
+                        "overall": 78.5,
+                        "sections": {
+                            "IMPACT": 82.0,
+                            "RISK": 25.0,
+                            "RETURN": 75.0
+                        }
+                    }
                 }]
             )
         ]
@@ -121,14 +135,13 @@ class BankSPOViewSet(viewsets.ViewSet):
             # --- restrict to SPOs that are loan-eligible ---
             eligible_spo_ids = (
                 LoanEligibilityResult.objects
-                .filter(
-                    is_eligible=True,
-                    assessment__organization__created_by__in=qs,
-                )
-                .values_list("assessment__organization__created_by_id", flat=True)
-                .distinct()
+                    .filter(
+                        is_eligible=True,
+                        assessment__organization__created_by__in=qs,
+                    )
+                    .values_list("assessment__organization__created_by_id", flat=True)
+                    .distinct()
             )
-
             qs = qs.filter(id__in=eligible_spo_ids)
 
             # total AFTER eligibility + filters
@@ -148,26 +161,77 @@ class BankSPOViewSet(viewsets.ViewSet):
             if not ids:
                 return Response({"count": total_count, "results": []})
 
+            # --- latest eligible instrument + scores per SPO on this page ---
+            inst_map = {}
+            scores_map = {}
+
+            elig_qs = (
+                LoanEligibilityResult.objects
+                    .select_related("matched_instrument", "assessment__organization__created_by")
+                    .filter(
+                        is_eligible=True,
+                        assessment__organization__created_by_id__in=ids,
+                    )
+                    .order_by(
+                        "-evaluated_at",
+                        "-assessment__submitted_at",
+                        "-assessment__started_at",
+                    )
+            )
+
+            for elig in elig_qs:
+                org = getattr(elig.assessment, "organization", None)
+                if not org:
+                    continue
+                spo_id = org.created_by_id
+                if spo_id in inst_map:
+                    # already captured the latest for this SPO
+                    continue
+
+                inst = elig.matched_instrument
+                if inst:
+                    inst_map[spo_id] = {
+                        "id": inst.id,
+                        "name": inst.name,
+                    }
+                else:
+                    inst_map[spo_id] = None
+
+                sec_details = (elig.details or {}).get("sections", {}) if elig.details else {}
+                impact_norm = (sec_details.get("IMPACT") or {}).get("normalized")
+                risk_norm = (sec_details.get("RISK") or {}).get("normalized")
+                return_norm = (sec_details.get("RETURN") or {}).get("normalized")
+
+                scores_map[spo_id] = {
+                    "overall": float(elig.overall_score) if elig.overall_score is not None else None,
+                    "sections": {
+                        "IMPACT": impact_norm,
+                        "RISK": risk_norm,
+                        "RETURN": return_norm,
+                    },
+                }
+
             # prefetch summary timestamps
             submitted_by_user = (
                 Assessment.objects
-                .filter(organization__created_by_id__in=ids, status="SUBMITTED")
-                .values("organization__created_by_id")
-                .annotate(last_submitted=Max("submitted_at"))
+                    .filter(organization__created_by_id__in=ids, status="SUBMITTED")
+                    .values("organization__created_by_id")
+                    .annotate(last_submitted=Max("submitted_at"))
             )
             last_a_map = {x["organization__created_by_id"]: x["last_submitted"] for x in submitted_by_user}
 
             last_lr = (
                 LoanRequest.objects
-                .filter(organization__created_by_id__in=ids)
-                .values("organization__created_by_id")
-                .annotate(last_lr=Max("submitted_at"))
+                    .filter(organization__created_by_id__in=ids)
+                    .values("organization__created_by_id")
+                    .annotate(last_lr=Max("submitted_at"))
             )
             last_lr_map = {x["organization__created_by_id"]: x["last_lr"] for x in last_lr}
 
             rows = []
             for u in User.objects.filter(id__in=ids).select_related("organization"):
                 org = getattr(u, "organization", None)
+                spo_id = u.id
                 rows.append({
                     "id": u.id,
                     "email": u.email,
@@ -178,8 +242,10 @@ class BankSPOViewSet(viewsets.ViewSet):
                     "organization_name": getattr(org, "name", "") or "",
                     "focus_sector": getattr(org, "focus_sector", "") or "",
                     "org_created_at": getattr(org, "created_at", None) if hasattr(org, "created_at") else None,
-                    "last_assessment_submitted_at": last_a_map.get(u.id),
-                    "last_loan_request_submitted_at": last_lr_map.get(u.id),
+                    "last_assessment_submitted_at": last_a_map.get(spo_id),
+                    "last_loan_request_submitted_at": last_lr_map.get(spo_id),
+                    "instrument": inst_map.get(spo_id),
+                    "scores": scores_map.get(spo_id),
                 })
 
             return Response({
@@ -188,7 +254,10 @@ class BankSPOViewSet(viewsets.ViewSet):
             })
         except Exception as e:
             return Response(
-                {"message": "We could not fetch the SPO list right now. Please try again later.", "errors": str(e)},
+                {
+                    "message": "We could not fetch the SPO list right now. Please try again later.",
+                    "errors": str(e),
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 

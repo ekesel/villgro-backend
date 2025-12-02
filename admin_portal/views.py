@@ -20,8 +20,69 @@ class SectionAdminViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminRole]
 
     @extend_schema(
+        summary="List sections (by sector)",
+        description=(
+            "Returns sections that have at least one question in the given sector.\n\n"
+            "`sector` is **required** and is matched against `Question.sector`."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="sector",
+                description="Sector code / name used on Question.sector",
+                required=True,
+                type=str,
+            ),
+        ],
+        responses={200: SectionAdminSerializer(many=True)},
+    )
+    def list(self, request, *args, **kwargs):
+        """
+        GET /api/admin/sections/?sector=AGRICULTURE
+
+        sector (query param) is mandatory. We return only sections that
+        have at least one Question with Question.sector = sector.
+        """
+        try:
+            sector = request.query_params.get("sector")
+            if not sector:
+                return Response(
+                    {"message": "sector is required.", "errors": {"sector": ["This field is required."]}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            qs = (
+                self.get_queryset()
+                .filter(questions__sector=sector)
+                .distinct()
+            )
+            serializer = self.get_serializer(qs, many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            return Response(
+                {
+                    "message": "We could not fetch the sections right now. Please try again later.",
+                    "errors": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    @extend_schema(
         summary="Bulk reorder sections",
-        request={"type":"object","properties":{"orders":{"type":"array","items":{"type":"object","properties":{"id":{"type":"integer"},"order":{"type":"integer"}}}}}},
+        request={
+            "type": "object",
+            "properties": {
+                "orders": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "order": {"type": "integer"},
+                        },
+                    },
+                }
+            },
+        },
         responses={200: OpenApiResponse(description="OK")},
     )
     @action(detail=False, methods=["post"], url_path="reorder")
@@ -33,7 +94,10 @@ class SectionAdminViewSet(viewsets.ModelViewSet):
             return Response({"updated": len(items)})
         except Exception as e:
             return Response(
-                {"message": "We could not reorder the sections right now. Please try again later.", "errors": str(e)},
+                {
+                    "message": "We could not reorder the sections right now. Please try again later.",
+                    "errors": str(e),
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 

@@ -4,8 +4,9 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db import transaction
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse, OpenApiExample
 from django.db.models import Max
+from django.db.models import Count
 from admin_portal.permissions import IsAdminRole
 from admin_portal.serializers import SectionAdminSerializer, QuestionAdminSerializer
 from questionnaires.models import Section, Question, AnswerOption, BranchingCondition, QuestionDimension
@@ -246,5 +247,110 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response(
                 {"message": "We could not reorder the options right now. Please try again later.", "errors": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        
+    @action(detail=False, methods=["get"], url_path="sector-summary")
+    @extend_schema(
+        summary="Question counts per sector and section",
+        description=(
+            "Returns aggregated counts of questions per sector, including:\n"
+            "- total_questions\n"
+            "- impact_questions (section.code = 'IMPACT')\n"
+            "- risk_questions (section.code = 'RISK')\n"
+            "- return_questions (section.code = 'RETURN')\n\n"
+            "Questions with null/blank sector are grouped under 'OTHERS'."
+        ),
+        responses={
+            200: OpenApiResponse(
+                description="Per-sector question summary",
+                examples=[
+                    OpenApiExample(
+                        "Example payload",
+                        value=[
+                            {
+                                "sector": "AGRICULTURE",
+                                "total_questions": 16,
+                                "impact_questions": 16,
+                                "risk_questions": 16,
+                                "return_questions": 16,
+                            },
+                            {
+                                "sector": "OTHERS",
+                                "total_questions": 10,
+                                "impact_questions": 4,
+                                "risk_questions": 3,
+                                "return_questions": 3,
+                            },
+                        ],
+                        response_only=True,
+                    )
+                ],
+            )
+        },
+    )
+    def sector_summary(self, request):
+        """
+        GET /api/admin/questions/sector-summary/
+
+        Drives the admin Questions page cards:
+        - Agriculture, Waste management / recycling, Livelihood Creation, Health, Others, etc.
+        """
+        try:
+            # base queryset; you can add filters (e.g., is_active=True) if needed
+            qs = self.get_queryset()
+
+            # aggregate by sector + section code
+            # result rows: {"sector": "...", "section__code": "IMPACT", "count": N}
+            rows = (
+                qs.values("sector", "section__code")
+                  .annotate(count=Count("id"))
+                  .order_by()  # no ordering at DB level
+            )
+
+            sector_stats = {}
+
+            for row in rows:
+                raw_sector = row["sector"]
+                section_code = (row["section__code"] or "").upper()
+                count = row["count"]
+
+                # Treat null/blank as OTHERS
+                sector = raw_sector.strip() if isinstance(raw_sector, str) else raw_sector
+                if not sector:
+                    sector = "OTHERS"
+
+                if sector not in sector_stats:
+                    sector_stats[sector] = {
+                        "sector": sector,
+                        "total_questions": 0,
+                        "impact_questions": 0,
+                        "risk_questions": 0,
+                        "return_questions": 0,
+                    }
+
+                sector_stats[sector]["total_questions"] += count
+
+                if section_code == "IMPACT":
+                    sector_stats[sector]["impact_questions"] += count
+                elif section_code == "RISK":
+                    sector_stats[sector]["risk_questions"] += count
+                elif section_code == "RETURN":
+                    sector_stats[sector]["return_questions"] += count
+
+            # Turn dict -> list
+            data = list(sector_stats.values())
+
+            # Optional: sort by sector name for stable UI
+            data.sort(key=lambda x: x["sector"])
+
+            return Response(data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {
+                    "message": "We could not fetch the sector question summary right now. Please try again later.",
+                    "errors": str(e),
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

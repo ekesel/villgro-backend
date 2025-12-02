@@ -77,7 +77,7 @@ class QuestionAdminSerializer(serializers.ModelSerializer):
         fields = [
             "id", "section", "code", "text", "help_text",
             "type", "required", "order", "max_score", "weight",
-            "options", "dimensions", "conditions", "is_active",
+            "options", "dimensions", "conditions", "is_active", "sector",
         ]
 
     # ---- helpers ----------------------------------------------------------

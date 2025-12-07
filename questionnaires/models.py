@@ -2,6 +2,7 @@ from __future__ import annotations
 from decimal import Decimal
 from django.db import models
 from django.utils import timezone
+from organizations.models import Organization
 
 class Section(models.Model):
     code = models.CharField(max_length=50, unique=True)  # e.g. IMPACT, RISK
@@ -35,7 +36,12 @@ class Question(models.Model):
     max_score = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     weight = models.DecimalField(max_digits=5, decimal_places=2, default=1.0)
     is_active = models.BooleanField(default=True)
-    sector = models.CharField(max_length=100, blank=True, null=True)
+    sector = models.CharField(
+        max_length=20,
+        choices=Organization.FocusSector.choices,
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         ordering = ["section", "order"]

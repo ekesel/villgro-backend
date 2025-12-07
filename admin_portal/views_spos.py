@@ -873,7 +873,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                     # Only include questions from this section
                     questions = (
                         Question.objects
-                        .filter(section=sec, is_active=True)
+                        .filter(section=sec, is_active=True, sector=org.focus_sector)
                         .order_by("order")
                     )
 

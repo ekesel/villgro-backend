@@ -15,7 +15,8 @@ from questionnaires.utils import _build_validation_message
 logger = logging.getLogger(__name__)
 
 class AdminPage(PageNumberPagination):
-    page_size = 50
+    page_size = 50 
+    page_size_query_param = "page_size"
     max_page_size = 100
 
 @extend_schema(tags=["Admin • Admins"])

@@ -4,7 +4,12 @@ from typing import Dict, Tuple
 from questionnaires.utils import extract_q_refs
 
 def build_answers_map(assessment):
-    return {a.question.code: a.data for a in assessment.answers.select_related("question")}
+    sector = assessment.org.sector
+    answers = assessment.answers.select_related("question").filter(
+        question__sector=sector
+    )
+
+    return {a.question.code: a.data for a in answers}
 
 def visible_questions_for_section(assessment, section):
     answers_map = build_answers_map(assessment)

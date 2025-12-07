@@ -13,7 +13,7 @@ def build_answers_map(assessment):
 
 def visible_questions_for_section(assessment, section):
     answers_map = build_answers_map(assessment)
-    qs = section.questions.prefetch_related("options", "dimensions", "conditions").order_by("order")
+    qs = section.questions.filter(sector=assessment.organization.focus_sector).prefetch_related("options", "dimensions", "conditions").order_by("order")
     visible = []
     for q in qs:
         conds = list(q.conditions.all())

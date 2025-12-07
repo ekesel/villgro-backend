@@ -4,7 +4,7 @@ from typing import Dict, Tuple
 from questionnaires.utils import extract_q_refs
 
 def build_answers_map(assessment):
-    sector = assessment.org.sector
+    sector = assessment.organization.focus_sector
     answers = assessment.answers.select_related("question").filter(
         question__sector=sector
     )

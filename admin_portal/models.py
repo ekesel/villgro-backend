@@ -50,3 +50,29 @@ class ActivityLog(models.Model):
     def __str__(self):
         base = f"{self.action} {self.app_label}.{self.model}"
         return f"{base}#{self.object_id} by {self.actor_id} at {self.created_at:%Y-%m-%d %H:%M:%S}"
+    
+
+class AdminConfig(models.Model):
+    """
+    Singleton-ish model to store global admin configuration.
+    For now, only assessment_cooldown_days is stored, but
+    more fields can be added later.
+    """
+    assessment_cooldown_days = models.PositiveIntegerField(
+        default=7,
+        help_text="Cooldown in days before a startup can begin a new assessment."
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def get_solo(cls):
+        """
+        Ensure there is always exactly one config row.
+        """
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return f"AdminConfig(id={self.pk}, cooldown={self.assessment_cooldown_days} days)"

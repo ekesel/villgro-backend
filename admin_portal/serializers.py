@@ -514,3 +514,9 @@ class AdminUserCreateSerializer(serializers.Serializer):
     def validate_password(self, value):
         validate_password(value)
         return value
+    
+class AssessmentCooldownConfigSerializer(serializers.Serializer):
+    days = serializers.IntegerField(
+        min_value=0,
+        help_text="Cooldown in days before a startup can begin a new assessment."
+    )

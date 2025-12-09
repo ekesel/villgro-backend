@@ -188,8 +188,6 @@ LOG_DIR = BASE_DIR / "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
-ASSESSMENT_COOLDOWN_DAYS = 180
-
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,

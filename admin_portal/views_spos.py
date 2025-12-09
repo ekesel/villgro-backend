@@ -10,7 +10,7 @@ from rest_framework.exceptions import ValidationError
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse, OpenApiExample
 from admin_portal.permissions import IsAdminRole
 from admin_portal.serializers import (
-    AdminSPOListSerializer, AdminSPOCreateSerializer, AdminSPOUpdateSerializer
+    AdminSPOListSerializer, AdminSPOCreateSerializer, AdminSPOUpdateSerializer, AssessmentCooldownConfigSerializer
 )
 from django.utils.dateparse import parse_date
 from django.db.models import Q
@@ -23,6 +23,8 @@ from django.shortcuts import get_object_or_404
 from questionnaires.models import LoanEligibilityResult, Section, Question
 from assessments.services import build_answers_map
 from questionnaires.utils import _build_validation_message
+from admin_portal.models import AdminConfig
+from django.conf import settings
 logger = logging.getLogger(__name__)
 
 @extend_schema(tags=["Admin • SPOs"])
@@ -931,6 +933,110 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
             return Response(
                 {
                     "message": "We could not fetch the assessment questions right now. Please try again later.",
+                    "errors": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        
+    @action(detail=False, methods=["get", "patch"], url_path="assessment-cooldown")
+    @extend_schema(
+        summary="Get or update global assessment cooldown (days)",
+        description=(
+            "Admin-only endpoint to view or change the global "
+            "`assessment_cooldown_days` configuration.\n\n"
+            "- **GET**: Returns current cooldown in days.\n"
+            "- **PATCH**: Updates cooldown and persists it in the database."
+        ),
+        request=AssessmentCooldownConfigSerializer,
+        responses={
+            200: AssessmentCooldownConfigSerializer,
+            400: OpenApiResponse(description="Validation error"),
+        },
+        examples=[
+            OpenApiExample(
+                "GET response",
+                value={"days": 7},
+                response_only=True,
+            ),
+            OpenApiExample(
+                "PATCH request",
+                value={"days": 14},
+            ),
+        ],
+    )
+    def assessment_cooldown(self, request):
+        """
+        GET  -> return current cooldown days from AdminConfig
+        PATCH -> update cooldown days in AdminConfig
+        """
+        try:
+            # get singleton config (creates row if not exists)
+            try:
+                config = AdminConfig.get_solo()
+            except Exception as e:
+                logger.exception("Failed to fetch AdminConfig")
+                return Response(
+                    {
+                        "message": "We could not load the configuration right now. Please try again later.",
+                        "errors": str(e),
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            if request.method == "GET":
+                # Optional: fallback to settings if config has not been initialized
+                fallback = getattr(settings, "ASSESSMENT_COOLDOWN_DAYS", None)
+                current = config.assessment_cooldown_days or fallback
+                return Response({"days": current}, status=status.HTTP_200_OK)
+
+            # PATCH
+            ser = AssessmentCooldownConfigSerializer(data=request.data)
+            try:
+                ser.is_valid(raise_exception=True)
+            except ValidationError as exc:
+                logger.info(
+                    "Assessment cooldown update validation failed: %s",
+                    exc.detail,
+                )
+                return Response(
+                    {
+                        "message": _build_validation_message(exc.detail),
+                        "errors": exc.detail,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            except Exception as e:
+                logger.exception("Unexpected error validating cooldown update payload")
+                return Response(
+                    {
+                        "message": "We could not update the cooldown right now. Please try again later.",
+                        "errors": str(e),
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            new_days = ser.validated_data["days"]
+
+            try:
+                config.assessment_cooldown_days = new_days
+                config.save(update_fields=["assessment_cooldown_days", "updated_at"])
+            except Exception as e:
+                logger.exception("Failed to update AdminConfig.assessment_cooldown_days")
+                return Response(
+                    {
+                        "message": "We could not update the cooldown right now. Please try again later.",
+                        "errors": str(e),
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            return Response({"days": new_days}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.exception("Unexpected error in assessment_cooldown endpoint")
+            return Response(
+                {
+                    "message": "We could not process the cooldown configuration right now. Please try again later.",
                     "errors": str(e),
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

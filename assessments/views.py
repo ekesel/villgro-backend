@@ -7,7 +7,7 @@ from weasyprint import HTML
 from django.template.loader import render_to_string
 from django.http import HttpResponse
 from django.utils import timezone
-from django.conf import settings
+from admin_portal.models import AdminConfig
 from django.shortcuts import get_object_or_404
 
 from assessments.services import compute_scores
@@ -22,9 +22,6 @@ from questionnaires.models import Section, Question
 from assessments.services import build_answers_map, visible_questions_for_section, compute_progress
 from assessments.services import get_control_qcodes
 from questionnaires.logic import eligibility_check
-
-ASSESSMENT_COOLDOWN_DAYS = int(getattr(settings, "ASSESSMENT_COOLDOWN_DAYS", 180))
-
 
 class StartAssessmentView(APIView):
     permission_classes = [IsAuthenticated]
@@ -523,7 +520,9 @@ class SubmitAssessmentView(APIView):
             scores, _breakdown = compute_scores(assessment)
             assessment.status = "SUBMITTED"
             assessment.submitted_at = timezone.now()
-            assessment.cooldown_until = timezone.now() + timezone.timedelta(days=ASSESSMENT_COOLDOWN_DAYS)
+            config = AdminConfig.get_solo()
+            cooldown_days = config.assessment_cooldown_days
+            assessment.cooldown_until = timezone.now() + timezone.timedelta(days=cooldown_days)
             assessment.scores = scores
             assessment.save(update_fields=["status", "submitted_at", "cooldown_until", "scores"])
             eligibility = eligibility_check(assessment)

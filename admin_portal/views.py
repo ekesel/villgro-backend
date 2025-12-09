@@ -10,7 +10,9 @@ from django.db.models import Count
 from admin_portal.permissions import IsAdminRole
 from admin_portal.serializers import SectionAdminSerializer, QuestionAdminSerializer
 from questionnaires.models import Section, Question, AnswerOption, BranchingCondition, QuestionDimension
-
+from django.db import transaction
+from django.db.models import Max, Count, Q
+from django.utils.text import slugify
 
 # ----- Sections
 @extend_schema(tags=["Admin • Questionnaire • Sections"])
@@ -414,6 +416,203 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
             return Response(
                 {
                     "message": "We could not fetch the sector question summary right now. Please try again later.",
+                    "errors": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        
+    @action(detail=False, methods=["post"], url_path="add-sector")
+    @extend_schema(
+        summary="Add a new sector by cloning template questions",
+        description=(
+            "Creates Question objects for all 4 sections (IMPACT, RISK, RETURN, SECTOR_MATURITY or equivalent)\n"
+            "for a newly added sector.\n\n"
+            "This works by **cloning template questions** (e.g. generic/OTHERS sector) including:\n"
+            "- options\n"
+            "- dimensions\n"
+            "- conditions\n\n"
+            "By default it uses questions with null/blank sector as templates; optionally you can pass "
+            "`template_sector` to clone from an existing sector."
+        ),
+        request={
+            "type": "object",
+            "properties": {
+                "sector": {"type": "string"},
+                "template_sector": {
+                    "type": "string",
+                    "description": "Optional source sector to clone from. If omitted, uses null/blank sector.",
+                },
+            },
+            "required": ["sector"],
+        },
+        responses={
+            201: OpenApiResponse(
+                description="Questions created for the new sector",
+                examples=[
+                    OpenApiExample(
+                        "Created summary",
+                        value={
+                            "sector": "AGRICULTURE",
+                            "template_sector": None,
+                            "created_questions": 48,
+                            "question_ids": [101, 102, 103],
+                        },
+                        response_only=True,
+                    )
+                ],
+            ),
+            400: OpenApiResponse(description="Validation error"),
+        },
+    )
+    def add_sector(self, request):
+        """
+        POST /api/admin/questions/add-sector/
+
+        Body:
+        {
+            "sector": "AGRICULTURE",
+            "template_sector": "OTHERS"   # optional
+        }
+
+        Clones template questions for sections IMPACT/RISK/RETURN/SECTOR_MATURITY
+        (adjust section codes below if needed) to the new sector, including
+        options/dimensions/conditions.
+        """
+        try:
+            sector = (request.data.get("sector") or "").strip()
+            template_sector = (request.data.get("template_sector") or "").strip() or None
+
+            if not sector:
+                return Response(
+                    {"message": "sector is required.", "errors": {}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # ---- Section codes to cover (change if your 4th code is different) ----
+            SECTION_CODES = ["IMPACT", "RISK", "RETURN", "SECTOR_MATURITY"]
+
+            # Build base template queryset
+            base_filter = Q(section__code__in=SECTION_CODES)
+
+            if template_sector is None:
+                # Use generic questions as templates (null/blank sector)
+                base_filter &= (Q(sector__isnull=True) | Q(sector="") | Q(sector="OTHERS"))
+            else:
+                base_filter &= Q(sector=template_sector)
+
+            templates = (
+                Question.objects
+                .filter(base_filter)
+                .prefetch_related("options", "dimensions", "conditions")
+                .order_by("section__code", "order", "id")
+            )
+
+            if not templates.exists():
+                return Response(
+                    {
+                        "message": "No template questions found for the given template_sector / generic sector.",
+                        "errors": {},
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            created_ids = []
+
+            # Pre-compute current max order per (section, sector) to append correctly
+            existing_orders = (
+                Question.objects
+                .filter(section__in=Section.objects.filter(code__in=SECTION_CODES), sector=sector)
+                .values("section_id")
+                .annotate(m=Max("order"))
+            )
+            max_order_map = {row["section_id"]: (row["m"] or 0) for row in existing_orders}
+
+            with transaction.atomic():
+                for src in templates:
+                    section = src.section
+                    # base order for this section in this sector
+                    current_max = max_order_map.get(section.id, 0)
+                    new_order = current_max + 1
+                    max_order_map[section.id] = new_order
+
+                    # generate a unique code for new question
+                    base_code = f"{src.code}_{slugify(sector).upper()}"
+                    code_candidate = base_code or f"{src.code}_SECTOR"
+                    idx = 1
+                    while Question.objects.filter(code=code_candidate).exists():
+                        code_candidate = f"{base_code}_{idx}"
+                        idx += 1
+
+                    q = Question.objects.create(
+                        section=section,
+                        code=code_candidate,
+                        text=src.text,
+                        help_text=src.help_text,
+                        type=src.type,
+                        required=src.required,
+                        order=new_order,
+                        max_score=src.max_score,
+                        weight=src.weight,
+                        is_active=getattr(src, "is_active", True),
+                        sector=sector,
+                    )
+                    created_ids.append(q.id)
+
+                    # Clone options
+                    opts = [
+                        AnswerOption(
+                            question=q,
+                            label=o.label,
+                            value=o.value,
+                            points=o.points,
+                            # add 'order' if you have it in the model
+                        )
+                        for o in src.options.all()
+                    ]
+                    if opts:
+                        AnswerOption.objects.bulk_create(opts)
+
+                    # Clone dimensions
+                    dims = [
+                        QuestionDimension(
+                            question=q,
+                            code=d.code,
+                            label=d.label,
+                            min_value=d.min_value,
+                            max_value=d.max_value,
+                            points_per_unit=d.points_per_unit,
+                            weight=d.weight,
+                        )
+                        for d in src.dimensions.all()
+                    ]
+                    if dims:
+                        QuestionDimension.objects.bulk_create(dims)
+
+                    # Clone conditions
+                    conds = [
+                        BranchingCondition(
+                            question=q,
+                            logic=c.logic,
+                        )
+                        for c in src.conditions.all()
+                    ]
+                    if conds:
+                        BranchingCondition.objects.bulk_create(conds)
+
+            return Response(
+                {
+                    "sector": sector,
+                    "template_sector": template_sector,
+                    "created_questions": len(created_ids),
+                    "question_ids": created_ids,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        except Exception as e:
+            return Response(
+                {
+                    "message": "We could not add the sector questions right now. Please try again later.",
                     "errors": str(e),
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

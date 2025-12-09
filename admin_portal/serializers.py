@@ -29,17 +29,25 @@ class SectionAdminSerializer(serializers.ModelSerializer):
         ]
 
     def get_total_questions(self, obj):
-        return Question.objects.filter(section=obj).count()
+        context = self.context or {}
+        sector = context.get("sector", None)
+        return Question.objects.filter(section=obj, sector=sector).count()
 
     def get_active_questions(self, obj):
-        return Question.objects.filter(section=obj, is_active=True).count()
+        context = self.context or {}
+        sector = context.get("sector", None)
+        return Question.objects.filter(section=obj, is_active=True, sector=sector).count()
 
     def get_inactive_questions(self, obj):
-        return Question.objects.filter(section=obj, is_active=False).count()
+        context = self.context or {}
+        sector = context.get("sector", None)
+        return Question.objects.filter(section=obj, is_active=False, sector=sector).count()
 
     def get_weightage(self, obj):
         """Calculate weightage as percentage of section’s total weight vs all sections."""
-        qs = Question.objects.filter(is_active=True)
+        context = self.context or {}
+        sector = context.get("sector", None)
+        qs = Question.objects.filter(is_active=True, sector=sector)
         total_weight = qs.aggregate(total=Sum("weight"))["total"] or 0
         section_weight = qs.filter(section=obj).aggregate(total=Sum("weight"))["total"] or 0
         if total_weight == 0:

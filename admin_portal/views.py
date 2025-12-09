@@ -57,7 +57,7 @@ class SectionAdminViewSet(viewsets.ModelViewSet):
                 .filter(questions__sector=sector)
                 .distinct()
             )
-            serializer = self.get_serializer(qs, many=True)
+            serializer = self.get_serializer(qs, many=True, context={"sector": sector})
             return Response(serializer.data)
         except Exception as e:
             return Response(

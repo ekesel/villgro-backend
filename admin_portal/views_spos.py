@@ -3,6 +3,7 @@ import logging
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from accounts.models import User
 from django.http import Http404, HttpResponse
 from rest_framework.exceptions import ValidationError
@@ -35,7 +36,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         # Make /qa/ endpoint public
         if self.action == "assessment_qa":
-            return []  # No permission classes → open to everyone
+            return [IsAuthenticated]  # No permission classes → open to everyone
 
         # For all other actions → default permission_classes
         return [permission() for permission in self.permission_classes]

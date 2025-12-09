@@ -125,6 +125,7 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
         try:
             vd = serializer.validated_data
             section = vd.get("section") or getattr(getattr(serializer.instance, "section", None), "pk", None)
+            sector = vd.get("sector") or getattr(getattr(serializer.instance, "sector", None), None)
             if not section:
                 # let serializer validation complain if section is required
                 return serializer.save()
@@ -133,11 +134,11 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
 
             # current max in this section
             max_order = (
-                Question.objects.filter(section=section).aggregate(m=Max("order"))["m"] or 0
+                Question.objects.filter(section=section, sector=sector).aggregate(m=Max("order"))["m"] or 0
             )
 
             # collision or not provided -> append to end
-            if provided_order is None or Question.objects.filter(section=section, order=provided_order).exists():
+            if provided_order is None or Question.objects.filter(section=section, order=provided_order, sector=sector).exists():
                 return serializer.save(order=max_order + 1)
 
             # no collision -> keep as-is

@@ -32,6 +32,14 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminRole]
     lookup_field = "pk"
 
+    def get_permissions(self):
+        # Make /qa/ endpoint public
+        if self.action == "assessment_qa":
+            return []  # No permission classes → open to everyone
+
+        # For all other actions → default permission_classes
+        return [permission() for permission in self.permission_classes]
+
     def get_queryset(self):
         qs = (
             User.objects.filter(role=User.Role.SPO)

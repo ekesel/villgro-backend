@@ -619,3 +619,46 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+        
+    @extend_schema(
+        summary="Delete question (blocked if last in its section for that sector)",
+        responses={
+            204: OpenApiResponse(description="Deleted"),
+            400: OpenApiResponse(description="Cannot delete last question in section"),
+        },
+    )
+    def destroy(self, request, *args, **kwargs):
+        try:
+            try:
+                q = self.get_object()
+            except Exception as e:
+                # default DRF behaviour if not found
+                return super().destroy(request, *args, **kwargs)
+
+            # Count questions in the same section + sector
+            same_bucket_qs = Question.objects.filter(
+                section=q.section,
+                sector=q.sector,
+            )
+
+            if same_bucket_qs.count() <= 1:
+                # Block deletion if this is the last question for that section+sector
+                return Response(
+                    {
+                        "message": "You cannot delete the last question in this section for this sector.",
+                        "errors": {},
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Safe to delete, not the last one
+            return super().destroy(request, *args, **kwargs)
+
+        except Exception as e:
+            return Response(
+                {
+                    "message": "We could not delete the question right now. Please try again later.",
+                    "errors": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

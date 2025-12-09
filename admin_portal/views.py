@@ -161,8 +161,9 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
     def by_section(self, request):
         try:
             sec = request.query_params.get("section")
+            sector = request.query_params.get("sector")
             if not sec: return Response({"message":"section is required", "errors": {}}, status=400)
-            qs = self.get_queryset().filter(section__code=sec)
+            qs = self.get_queryset().filter(section__code=sec, sector=sector) if sector else self.get_queryset().filter(section__code=sec)
             return Response(QuestionAdminSerializer(qs, many=True).data)
         except Exception as e:
             return Response(

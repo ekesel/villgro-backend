@@ -212,7 +212,7 @@ def _pick_instrument(
             if risk_band(0, 40):
                 name = "Commercial debt with impact linked incentives"
             elif risk_band(41, 60):
-                name = "Guarantee backed debt with TA"
+                name = "Guarantee backed debt with impact linked interest subvention"
             elif risk_band(61, 80):
                 name = "Subordinate / concessional equity / Convertible Note"
             else:
@@ -221,7 +221,7 @@ def _pick_instrument(
             if risk_band(0, 40):
                 name = "Commercial debt with impact linked incentives"
             elif risk_band(41, 60):
-                name = "Debt linked instrument like convertible note"
+                name = "Subordinate / concessional equity / Convertible Note"
             elif risk_band(61, 80):
                 name = "Returnable Grant"
             else:

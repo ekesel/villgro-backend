@@ -52,8 +52,8 @@ class Question(models.Model):
 
 class AnswerOption(models.Model):
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="options")
-    label = models.CharField(max_length=255)
-    value = models.CharField(max_length=500)  # frontend key
+    label = models.CharField(max_length=2500)
+    value = models.CharField(max_length=2500)  # frontend key
     points = models.DecimalField(max_digits=6, decimal_places=2, default=0)
     order = models.PositiveIntegerField(default=0)
 

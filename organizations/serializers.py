@@ -1,11 +1,33 @@
 from rest_framework import serializers
 from organizations.models import OnboardingProgress, Organization
+from questionnaires.models import Section
 
 class OnboardingProgressSerializer(serializers.ModelSerializer):
+    sections = serializers.SerializerMethodField()
+    
     class Meta:
         model = OnboardingProgress
-        fields = ["current_step", "data", "is_complete", "updated_at"]
+        fields = ["current_step", "data", "is_complete", "updated_at", "sections"]
         read_only_fields = ["is_complete", "updated_at"]
+
+    def get_sections(self, obj: OnboardingProgress):
+        """
+        Returns a distinct list of sections in the format:
+        [
+            {"label": "Impact Assessment", "value": "IMPACT"},
+            {"label": "Risk Assessment", "value": "RISK"},
+            ...
+        ]
+        """
+        sections = Section.objects.all().order_by("order").distinct()
+
+        return [
+            {
+                "label": sec.title,
+                "value": sec.code,
+            }
+            for sec in sections
+        ]
 
 class OnboardingProgressSaveSerializer(serializers.Serializer):
     # Save/merge partial data and/or move the pointer

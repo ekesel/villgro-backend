@@ -19,14 +19,13 @@ class OnboardingProgressSerializer(serializers.ModelSerializer):
             ...
         ]
         """
-        sectors = Question.objects.all().values_list("sector").distinct()
+        sectors = Question.objects \
+            .values_list("sector", flat=True) \
+            .distinct()
 
         return [
-            {
-                "label": sec,
-                "value": sec,
-            }
-            for sec in sectors
+            {"label": sec, "value": sec}
+            for sec in sectors if sec
         ]
 
 class OnboardingProgressSaveSerializer(serializers.Serializer):

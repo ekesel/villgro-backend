@@ -2,7 +2,6 @@ from __future__ import annotations
 from decimal import Decimal
 from django.db import models
 from django.utils import timezone
-from organizations.models import Organization
 
 class Section(models.Model):
     code = models.CharField(max_length=50, unique=True)  # e.g. IMPACT, RISK
@@ -38,7 +37,6 @@ class Question(models.Model):
     is_active = models.BooleanField(default=True)
     sector = models.CharField(
         max_length=50,
-        choices=Organization.FocusSector.choices,
         null=True,
         blank=True,
     )

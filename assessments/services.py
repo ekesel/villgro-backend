@@ -165,9 +165,16 @@ def compute_scores(assessment) -> Tuple[Dict, Dict]:
 
         # Special-case for RISK (lower is better), same as eligibility_check
         if code.upper() == "RISK":
-            # keep RISK raw scale (usually 0–40) if within max_t
-            if raw_score is not None and Decimal(str(raw_score)) <= max_t:
-                norm_score = Decimal(str(raw_score))
+            raw_dec = Decimal(str(raw_score)) if raw_score is not None else None
+            if raw_dec is None or raw_dec > max_t:
+                # if it fails gate or is missing, skip contribution
+                continue
+
+            if max_t > 0:
+                ratio = raw_dec / max_t
+                norm_score = _clamp_0_100((Decimal("1") - ratio) * Decimal("100"))
+            else:
+                norm_score = _clamp_0_100(raw_dec)
 
         contrib = Decimal("0")
         if w > 0:

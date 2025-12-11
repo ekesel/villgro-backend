@@ -357,10 +357,21 @@ def eligibility_check(assessment: Assessment, *, overall_threshold: Decimal = DE
 
         # Special-case for RISK (lower is better)
         if code.upper() == "RISK":
-            # keep RISK raw scale (usually 0–40) to avoid over-normalizing
-            if raw_score is not None and Decimal(str(raw_score)) <= max_t:
-                norm_score = Decimal(str(raw_score))
-            gate_pass = norm_score <= max_t
+            # Gate: raw risk must be <= max_t (lower is better)
+            raw_dec = Decimal(str(raw_score)) if raw_score is not None else None
+            if raw_dec is None:
+                gate_pass = False
+                norm_score = Decimal("0")
+            else:
+                gate_pass = raw_dec <= max_t
+
+                # Map 0 (best) .. max_t (worst acceptable) to 100 .. 0
+                if max_t > 0:
+                    ratio = raw_dec / max_t          # 0 (best) .. 1 (worst OK)
+                    norm_score = _clamp_0_100((Decimal("1") - ratio) * Decimal("100"))
+                else:
+                    # Fallback: no sane max_t, just clamp raw
+                    norm_score = _clamp_0_100(raw_dec)
         else:
             gate_pass = (norm_score >= min_t) and (norm_score <= max_t)
 

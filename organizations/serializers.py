@@ -22,6 +22,8 @@ class OnboardingProgressSerializer(serializers.ModelSerializer):
         sectors = Question.objects \
             .values_list("sector", flat=True) \
             .distinct()
+        
+        sectors = set(sectors)
 
         return [
             {"label": sec, "value": sec}

@@ -427,7 +427,7 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
     @extend_schema(
         summary="Add a new sector by cloning template questions",
         description=(
-            "Creates Question objects for all 4 sections (IMPACT, RISK, RETURN, SECTOR_MATURITY or equivalent)\n"
+            "Creates Question objects for all 4 sections (IMPACT, RISK, RETURN, SECTOR_MATURITY)\n"
             "for a newly added sector.\n\n"
             "This works by **cloning template questions** (e.g. generic/OTHERS sector) including:\n"
             "- options\n"
@@ -456,8 +456,8 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
                         value={
                             "sector": "AGRICULTURE",
                             "template_sector": None,
-                            "created_questions": 48,
-                            "question_ids": [101, 102, 103],
+                            "created_questions": 4,
+                            "question_ids": [101, 102, 103, 104],
                         },
                         response_only=True,
                     )
@@ -476,9 +476,8 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
             "template_sector": "OTHERS"   # optional
         }
 
-        Clones template questions for sections IMPACT/RISK/RETURN/SECTOR_MATURITY
-        (adjust section codes below if needed) to the new sector, including
-        options/dimensions/conditions.
+        Clones **one** template question per section (IMPACT/RISK/RETURN/SECTOR_MATURITY)
+        to the new sector, including options/dimensions/conditions.
         """
         try:
             sector = (request.data.get("sector") or "").strip()
@@ -490,21 +489,22 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # ---- Section codes to cover (change if your 4th code is different) ----
+            # ---- Section codes to cover ----
             SECTION_CODES = ["IMPACT", "RISK", "RETURN", "SECTOR_MATURITY"]
 
             # Build base template queryset
             base_filter = Q(section__code__in=SECTION_CODES)
 
             if template_sector is None:
-                # Use generic questions as templates (null/blank sector)
-                base_filter &= (Q(sector__isnull=True) | Q(sector="") | Q(sector="OTHERS"))
+                # Use generic questions as templates (null/blank/OTHERS sector)
+                base_filter &= (
+                    Q(sector__isnull=True) | Q(sector="") | Q(sector="OTHERS")
+                )
             else:
                 base_filter &= Q(sector=template_sector)
 
             templates = (
-                Question.objects
-                .filter(base_filter)
+                Question.objects.filter(base_filter)
                 .prefetch_related("options", "dimensions", "conditions")
                 .order_by("section__code", "order", "id")
             )
@@ -518,20 +518,35 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            created_ids = []
+            created_ids: list[int] = []
 
             # Pre-compute current max order per (section, sector) to append correctly
             existing_orders = (
-                Question.objects
-                .filter(section__in=Section.objects.filter(code__in=SECTION_CODES), sector=sector)
+                Question.objects.filter(
+                    section__in=Section.objects.filter(code__in=SECTION_CODES),
+                    sector=sector,
+                )
                 .values("section_id")
                 .annotate(m=Max("order"))
             )
             max_order_map = {row["section_id"]: (row["m"] or 0) for row in existing_orders}
 
             with transaction.atomic():
-                for src in templates:
+                for sec_code in SECTION_CODES:
+                    # Skip if this sector already has any question in this section
+                    if Question.objects.filter(
+                        section__code=sec_code, sector=sector
+                    ).exists():
+                        continue
+
+                    # Pick exactly ONE template for this section
+                    src = templates.filter(section__code=sec_code).first()
+                    if not src:
+                        # No template for this section; skip
+                        continue
+
                     section = src.section
+
                     # base order for this section in this sector
                     current_max = max_order_map.get(section.id, 0)
                     new_order = current_max + 1
@@ -567,7 +582,6 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
                             label=o.label,
                             value=o.value,
                             points=o.points,
-                            # add 'order' if you have it in the model
                         )
                         for o in src.options.all()
                     ]

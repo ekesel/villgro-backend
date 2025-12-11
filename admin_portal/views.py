@@ -10,6 +10,7 @@ from django.db.models import Count
 from admin_portal.permissions import IsAdminRole
 from admin_portal.serializers import SectionAdminSerializer, QuestionAdminSerializer
 from questionnaires.models import Section, Question, AnswerOption, BranchingCondition, QuestionDimension
+from organizations.models import Organization
 from django.db import transaction
 from django.db.models import Max, Count, Q
 from django.utils.text import slugify
@@ -672,6 +673,176 @@ class QuestionAdminViewSet(viewsets.ModelViewSet):
             return Response(
                 {
                     "message": "We could not delete the question right now. Please try again later.",
+                    "errors": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        
+    @action(detail=False, methods=["post"], url_path="edit-sector")
+    @extend_schema(
+        summary="Rename / remap a sector across questions and organizations",
+        description=(
+            "Updates all Question.sector and Organization.focus_sector from one sector code to another.\n\n"
+            "Use this when you want to rename/merge a sector code globally.\n"
+            "Example: LIVELIHOOD → LIVELIHOOD_CREATION"
+        ),
+        request={
+            "type": "object",
+            "properties": {
+                "old_sector": {"type": "string"},
+                "new_sector": {"type": "string"},
+            },
+            "required": ["old_sector", "new_sector"],
+        },
+        responses={
+            200: OpenApiResponse(
+                description="Sector remapped",
+                examples=[
+                    OpenApiExample(
+                        "Remap summary",
+                        value={
+                            "old_sector": "LIVELIHOOD",
+                            "new_sector": "LIVELIHOOD_CREATION",
+                            "updated_questions": 20,
+                            "updated_organizations": 5,
+                        },
+                        response_only=True,
+                    )
+                ],
+            ),
+            400: OpenApiResponse(description="Validation error"),
+        },
+    )
+    def edit_sector(self, request):
+        """
+        POST /api/admin/questions/edit-sector/
+
+        Body:
+        {
+            "old_sector": "LIVELIHOOD",
+            "new_sector": "LIVELIHOOD_CREATION"
+        }
+
+        Effect:
+        - Question.objects.filter(sector=old_sector).update(sector=new_sector)
+        - Organization.objects.filter(focus_sector=old_sector).update(focus_sector=new_sector)
+        """
+        try:
+            old_sector = (request.data.get("old_sector") or "").strip()
+            new_sector = (request.data.get("new_sector") or "").strip()
+
+            if not old_sector or not new_sector:
+                return Response(
+                    {
+                        "message": "old_sector and new_sector are required.",
+                        "errors": {},
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if old_sector == new_sector:
+                return Response(
+                    {
+                        "message": "old_sector and new_sector cannot be the same.",
+                        "errors": {},
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            with transaction.atomic():
+                q_qs = Question.objects.filter(sector=old_sector)
+                o_qs = Organization.objects.filter(focus_sector=old_sector)
+
+                updated_questions = q_qs.update(sector=new_sector)
+                updated_organizations = o_qs.update(focus_sector=new_sector)
+
+            return Response(
+                {
+                    "old_sector": old_sector,
+                    "new_sector": new_sector,
+                    "updated_questions": updated_questions,
+                    "updated_organizations": updated_organizations,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except Exception as e:
+            return Response(
+                {
+                    "message": "We could not update the sector right now. Please try again later.",
+                    "errors": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+    
+    @action(detail=False, methods=["post"], url_path="delete-sector")
+    @extend_schema(
+        summary="Delete all questions for a given sector",
+        description=(
+            "Deletes all Question objects with the given sector code.\n\n"
+            "Note: Organizations are NOT modified; only questions are deleted."
+        ),
+        request={
+            "type": "object",
+            "properties": {
+                "sector": {"type": "string"},
+            },
+            "required": ["sector"],
+        },
+        responses={
+            200: OpenApiResponse(
+                description="Questions deleted for the sector",
+                examples=[
+                    OpenApiExample(
+                        "Delete summary",
+                        value={
+                            "sector": "AGRICULTURE",
+                            "deleted_questions": 20,
+                        },
+                        response_only=True,
+                    )
+                ],
+            ),
+            400: OpenApiResponse(description="Validation error"),
+        },
+    )
+    def delete_sector(self, request):
+        """
+        POST /api/admin/questions/delete-sector/
+
+        Body:
+        {
+            "sector": "AGRICULTURE"
+        }
+
+        Effect:
+        - Deletes all Question objects where sector == given sector.
+        - Does NOT modify Organization.focus_sector.
+        """
+        try:
+            sector = (request.data.get("sector") or "").strip()
+            if not sector:
+                return Response(
+                    {"message": "sector is required.", "errors": {}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            with transaction.atomic():
+                qs = Question.objects.filter(sector=sector)
+                deleted_count, _ = qs.delete()
+
+            return Response(
+                {
+                    "sector": sector,
+                    "deleted_questions": deleted_count,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except Exception as e:
+            return Response(
+                {
+                    "message": "We could not delete the sector questions right now. Please try again later.",
                     "errors": str(e),
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

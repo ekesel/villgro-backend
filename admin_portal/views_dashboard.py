@@ -149,7 +149,7 @@ class AdminDashboardSummaryView(APIView):
                 is_active=True,
             )
             total_spos = total_spos_qs.count()
-            new_spos = spos_qs
+            new_spos = spos_qs.count()
 
             # ---------- KPI: Completion rate (submitted / started in window) ----------
             started_qs = Assessment.objects.filter(

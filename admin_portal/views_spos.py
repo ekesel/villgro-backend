@@ -38,7 +38,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         # Make /qa/ endpoint public
         if self.action == "assessment_qa":
-            return [IsAuthenticated]  # No permission classes → open to everyone
+            return []  # No permission classes → open to everyone
 
         # For all other actions → default permission_classes
         return [permission() for permission in self.permission_classes]

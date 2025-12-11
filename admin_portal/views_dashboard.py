@@ -144,8 +144,12 @@ class AdminDashboardSummaryView(APIView):
                 date_joined__gte=win_from,
                 date_joined__lte=win_to,
             )
-            total_spos = spos_qs.count()
-            new_spos = total_spos  # in this design, total is also windowed
+            total_spos_qs = User.objects.filter(
+                role=User.Role.SPO,
+                is_active=True,
+            )
+            total_spos = total_spos_qs.count()
+            new_spos = spos_qs
 
             # ---------- KPI: Completion rate (submitted / started in window) ----------
             started_qs = Assessment.objects.filter(
@@ -164,7 +168,7 @@ class AdminDashboardSummaryView(APIView):
 
             # ---------- Funnel ----------
             # Registered (windowed)
-            funnel_registered = total_spos
+            funnel_registered = spos_qs.count()
 
             # Completed basic info (prefer OnboardingProgress)
             try:

@@ -1,16 +1,16 @@
 from rest_framework import serializers
 from organizations.models import OnboardingProgress, Organization
-from questionnaires.models import Section
+from questionnaires.models import Question
 
 class OnboardingProgressSerializer(serializers.ModelSerializer):
-    sections = serializers.SerializerMethodField()
-    
+    sectors = serializers.SerializerMethodField()
+
     class Meta:
         model = OnboardingProgress
-        fields = ["current_step", "data", "is_complete", "updated_at", "sections"]
+        fields = ["current_step", "data", "is_complete", "updated_at", "sectors"]
         read_only_fields = ["is_complete", "updated_at"]
 
-    def get_sections(self, obj: OnboardingProgress):
+    def get_sectors(self, obj: OnboardingProgress):
         """
         Returns a distinct list of sections in the format:
         [
@@ -19,14 +19,14 @@ class OnboardingProgressSerializer(serializers.ModelSerializer):
             ...
         ]
         """
-        sections = Section.objects.all().order_by("order").distinct()
+        sectors = Question.objects.all().values_list("sector").distinct()
 
         return [
             {
-                "label": sec.title,
-                "value": sec.code,
+                "label": sec,
+                "value": sec,
             }
-            for sec in sections
+            for sec in sectors
         ]
 
 class OnboardingProgressSaveSerializer(serializers.Serializer):

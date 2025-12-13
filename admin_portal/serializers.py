@@ -524,7 +524,13 @@ class AdminUserCreateSerializer(serializers.Serializer):
         return value
     
 class AssessmentCooldownConfigSerializer(serializers.Serializer):
-    days = serializers.IntegerField(
+    value = serializers.IntegerField(
         min_value=0,
-        help_text="Cooldown in days before a startup can begin a new assessment."
+        help_text="Cooldown value before a startup can begin a new assessment."
+    )
+    type = serializers.ChoiceField(
+        choices=["minutes", "hours", "days"],
+        required=False,
+        default="days",
+        help_text="Cooldown unit. Defaults to 'days' if not provided."
     )

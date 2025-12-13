@@ -1,8 +1,6 @@
 from django.db import models
 from django.conf import settings
-
-from django.db import models
-from django.conf import settings
+from datetime import timedelta
 
 class ActivityLog(models.Model):
     class Action(models.TextChoices):
@@ -55,12 +53,23 @@ class ActivityLog(models.Model):
 class AdminConfig(models.Model):
     """
     Singleton-ish model to store global admin configuration.
-    For now, only assessment_cooldown_days is stored, but
-    more fields can be added later.
     """
-    assessment_cooldown_days = models.PositiveIntegerField(
+
+    class CooldownUnit(models.TextChoices):
+        MINUTES = "minutes", "Minutes"
+        HOURS = "hours", "Hours"
+        DAYS = "days", "Days"
+
+    # NEW (use these going forward)
+    assessment_cooldown_value = models.PositiveIntegerField(
         default=7,
-        help_text="Cooldown in days before a startup can begin a new assessment."
+        help_text="Cooldown value before a startup can begin a new assessment."
+    )
+    assessment_cooldown_unit = models.CharField(
+        max_length=10,
+        choices=CooldownUnit.choices,
+        default=CooldownUnit.DAYS,
+        help_text="Cooldown unit: minutes | hours | days."
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -68,11 +77,23 @@ class AdminConfig(models.Model):
 
     @classmethod
     def get_solo(cls):
-        """
-        Ensure there is always exactly one config row.
-        """
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
 
     def __str__(self):
-        return f"AdminConfig(id={self.pk}, cooldown={self.assessment_cooldown_days} days)"
+        return (
+            f"AdminConfig(id={self.pk}, cooldown={self.assessment_cooldown_value} {self.assessment_cooldown_unit})"
+        )
+    
+    def get_assessment_cooldown_timedelta(self):
+        value = self.assessment_cooldown_value
+        unit = self.assessment_cooldown_unit
+
+        if unit == "minutes":
+            return timedelta(minutes=value)
+        if unit == "hours":
+            return timedelta(hours=value)
+
+        # default = days
+        return timedelta(days=value)
+    

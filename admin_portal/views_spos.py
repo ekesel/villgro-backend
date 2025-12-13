@@ -902,12 +902,11 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
         
     @action(detail=False, methods=["get", "patch"], url_path="assessment-cooldown")
     @extend_schema(
-        summary="Get or update global assessment cooldown (days)",
+        summary="Get or update global assessment cooldown (value + unit)",
         description=(
-            "Admin-only endpoint to view or change the global "
-            "`assessment_cooldown_days` configuration.\n\n"
-            "- **GET**: Returns current cooldown in days.\n"
-            "- **PATCH**: Updates cooldown and persists it in the database."
+            "Admin-only endpoint to view or change the global assessment cooldown.\n\n"
+            "- **GET**: Returns current cooldown as `{value, type}`.\n"
+            "- **PATCH**: Updates cooldown. If `type` is not provided, defaults to `days`."
         ),
         request=AssessmentCooldownConfigSerializer,
         responses={
@@ -915,91 +914,61 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
             400: OpenApiResponse(description="Validation error"),
         },
         examples=[
-            OpenApiExample(
-                "GET response",
-                value={"days": 7},
-                response_only=True,
-            ),
-            OpenApiExample(
-                "PATCH request",
-                value={"days": 14},
-            ),
+            OpenApiExample("GET response", value={"value": 7, "type": "days"}, response_only=True),
+            OpenApiExample("PATCH request (minutes)", value={"value": 30, "type": "minutes"}),
+            OpenApiExample("PATCH request (default days)", value={"value": 14}),
         ],
     )
     def assessment_cooldown(self, request):
-        """
-        GET  -> return current cooldown days from AdminConfig
-        PATCH -> update cooldown days in AdminConfig
-        """
         try:
-            # get singleton config (creates row if not exists)
             try:
                 config = AdminConfig.get_solo()
             except Exception as e:
                 logger.exception("Failed to fetch AdminConfig")
                 return Response(
-                    {
-                        "message": "We could not load the configuration right now. Please try again later.",
-                        "errors": str(e),
-                    },
+                    {"message": "We could not load the configuration right now. Please try again later.", "errors": str(e)},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
             if request.method == "GET":
-                # Optional: fallback to settings if config has not been initialized
-                fallback = getattr(settings, "ASSESSMENT_COOLDOWN_DAYS", None)
-                current = config.assessment_cooldown_days or fallback
-                return Response({"days": current}, status=status.HTTP_200_OK)
+                return Response(
+                    {
+                        "value": config.assessment_cooldown_value,
+                        "type": config.assessment_cooldown_unit,
+                    },
+                    status=status.HTTP_200_OK,
+                )
 
             # PATCH
             ser = AssessmentCooldownConfigSerializer(data=request.data)
             try:
                 ser.is_valid(raise_exception=True)
             except ValidationError as exc:
-                logger.info(
-                    "Assessment cooldown update validation failed: %s",
-                    exc.detail,
-                )
+                logger.info("Assessment cooldown update validation failed: %s", exc.detail)
                 return Response(
-                    {
-                        "message": _build_validation_message(exc.detail),
-                        "errors": exc.detail,
-                    },
+                    {"message": _build_validation_message(exc.detail), "errors": exc.detail},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            except Exception as e:
-                logger.exception("Unexpected error validating cooldown update payload")
-                return Response(
-                    {
-                        "message": "We could not update the cooldown right now. Please try again later.",
-                        "errors": str(e),
-                    },
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
 
-            new_days = ser.validated_data["days"]
+            new_value = ser.validated_data["value"]
+            new_type = ser.validated_data.get("type") or "days"  # default to days if frontend doesn't send
 
             try:
-                config.assessment_cooldown_days = new_days
-                config.save(update_fields=["assessment_cooldown_days", "updated_at"])
+                config.assessment_cooldown_value = new_value
+                config.assessment_cooldown_unit = new_type
+                config.save(update_fields=["assessment_cooldown_value", "assessment_cooldown_unit", "updated_at"])
             except Exception as e:
-                logger.exception("Failed to update AdminConfig.assessment_cooldown_days")
+                logger.exception("Failed to update assessment cooldown config")
                 return Response(
-                    {
-                        "message": "We could not update the cooldown right now. Please try again later.",
-                        "errors": str(e),
-                    },
+                    {"message": "We could not update the cooldown right now. Please try again later.", "errors": str(e)},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
-            return Response({"days": new_days}, status=status.HTTP_200_OK)
+            return Response({"value": new_value, "type": new_type}, status=status.HTTP_200_OK)
 
         except Exception as e:
             logger.exception("Unexpected error in assessment_cooldown endpoint")
             return Response(
-                {
-                    "message": "We could not process the cooldown configuration right now. Please try again later.",
-                    "errors": str(e),
-                },
+                {"message": "We could not process the cooldown configuration right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

@@ -521,8 +521,7 @@ class SubmitAssessmentView(APIView):
             assessment.status = "SUBMITTED"
             assessment.submitted_at = timezone.now()
             config = AdminConfig.get_solo()
-            cooldown_days = config.assessment_cooldown_days
-            assessment.cooldown_until = timezone.now() + timezone.timedelta(days=cooldown_days)
+            assessment.cooldown_until = timezone.now() + config.get_assessment_cooldown_timedelta()
             assessment.scores = scores
             assessment.save(update_fields=["status", "submitted_at", "cooldown_until", "scores"])
             eligibility = eligibility_check(assessment)

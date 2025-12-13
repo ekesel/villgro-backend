@@ -1,9 +1,8 @@
 import logging
 
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny, IsAuthenticated
 from accounts.models import User
 from django.http import Http404, HttpResponse
 from rest_framework.exceptions import ValidationError
@@ -18,14 +17,15 @@ from weasyprint import HTML
 from django.template.loader import render_to_string
 from django.utils.timezone import localtime
 from assessments.models import Assessment
-from questionnaires.models import LoanEligibilityResult
-from django.shortcuts import get_object_or_404
 from questionnaires.models import LoanEligibilityResult, Section, Question
+from django.shortcuts import get_object_or_404
 from assessments.services import build_answers_map
 from questionnaires.utils import _build_validation_message
 from admin_portal.models import AdminConfig
 from django.conf import settings
+
 logger = logging.getLogger(__name__)
+
 
 @extend_schema(tags=["Admin • SPOs"])
 class SPOAdminViewSet(viewsets.ModelViewSet):
@@ -88,14 +88,46 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
             return AdminSPOUpdateSerializer
         return AdminSPOListSerializer
 
+    # -----------------------------
+    # Helpers (latest-based enrich)
+    # -----------------------------
+    def _extract_scores_from_ler(self, ler: LoanEligibilityResult):
+        """
+        Returns:
+          {
+            "overall": float|None,
+            "sections": {"IMPACT": x, "RISK": y, "RETURN": z}
+          }
+        """
+        sec_details = (ler.details or {}).get("sections", {}) if ler.details else {}
+        impact_norm = (sec_details.get("IMPACT") or {}).get("normalized")
+        risk_norm = (sec_details.get("RISK") or {}).get("normalized")
+        return_norm = (sec_details.get("RETURN") or {}).get("normalized")
+
+        return {
+            "overall": float(ler.overall_score) if ler.overall_score is not None else None,
+            "sections": {
+                "IMPACT": impact_norm,
+                "RISK": risk_norm,
+                "RETURN": return_norm,
+            },
+        }
+
+    def _extract_instrument_from_ler(self, ler: LoanEligibilityResult):
+        inst = getattr(ler, "matched_instrument", None)
+        if not inst:
+            return None
+        return {"id": inst.id, "name": inst.name}
+
     @extend_schema(
         summary="List SPOs",
         description=(
             "List Startup (SPO) users with search, status filter, date range, and ordering.\n\n"
-            "Each row is enriched with:\n"
-            "- `loan_eligible`: true if ANY eligible LoanEligibilityResult exists for the SPO's organization\n"
-            "- `instrument`: the latest eligible matched instrument (id + name), if present\n"
-            "- `scores`: summary of the latest eligible assessment (overall + IMPACT/RISK/RETURN section scores)"
+            "Each row is enriched with (based on LATEST assessment result):\n"
+            "- `loan_eligible`: true/false based on the latest LoanEligibilityResult\n"
+            "- `instrument`: latest matched instrument (id + name), if present\n"
+            "- `scores`: summary from latest result (overall + IMPACT/RISK/RETURN normalized)\n"
+            "- `assessment_id`: assessment id for that latest result"
         ),
         parameters=[
             OpenApiParameter(name="q", description="Search email / name / organization", required=False, type=str),
@@ -154,10 +186,9 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
     )
     def list(self, request, *args, **kwargs):
         """
-        Enrich paginated list with:
-        - 'loan_eligible': True if ANY LoanEligibilityResult for this SPO's organization is eligible.
-        - 'instrument': latest eligible matched instrument (if any) for this SPO.
-        - 'scores': summary (overall + IMPACT/RISK/RETURN) of the latest eligible assessment.
+        Latest-based enrichment:
+        - loan_eligible = latest LoanEligibilityResult.is_eligible
+        - instrument/scores/assessment_id come from latest result even when non-eligible
         """
         try:
             response = super().list(request, *args, **kwargs)
@@ -171,62 +202,43 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
             # Collect SPO user ids present on the page
             user_ids = [it.get("id") for it in items if isinstance(it, dict) and it.get("id")]
 
+            # maps keyed by spo user id
             elig_map = {}
             inst_map = {}
             scores_map = {}
             latest_assessment_map = {}
 
             if user_ids:
-                # Fetch all ELIGIBLE results for these SPOs, newest first
-                elig_qs = (
+                # Fetch ALL results for these SPOs, newest first,
+                # then pick first per SPO => "latest result" (eligible OR not).
+                latest_qs = (
                     LoanEligibilityResult.objects
                     .select_related("matched_instrument", "assessment__organization__created_by")
-                    .filter(assessment__organization__created_by_id__in=user_ids, is_eligible=True)
+                    .filter(assessment__organization__created_by_id__in=user_ids)
                     .order_by(
                         "-evaluated_at",
                         "-assessment__submitted_at",
                         "-assessment__started_at",
+                        "-id",  # tie-breaker for deterministic latest
                     )
                 )
 
-                for elig in elig_qs:
-                    org = getattr(elig.assessment, "organization", None)
+                for ler in latest_qs:
+                    org = getattr(ler.assessment, "organization", None)
                     if not org:
                         continue
+
                     spo_id = org.created_by_id
-                    if spo_id in elig_map:
-                        continue  # already have latest one
+                    if spo_id in latest_assessment_map:
+                        continue  # already captured latest for this SPO
 
-                    elig_map[spo_id] = True
+                    # latest-based values
+                    elig_map[spo_id] = bool(getattr(ler, "is_eligible", False))
+                    latest_assessment_map[spo_id] = ler.assessment_id
+                    inst_map[spo_id] = self._extract_instrument_from_ler(ler)
+                    scores_map[spo_id] = self._extract_scores_from_ler(ler)
 
-                    latest_assessment_map[spo_id] = elig.assessment_id
-
-                    # Instrument payload
-                    inst = elig.matched_instrument
-                    if inst:
-                        inst_map[spo_id] = {
-                            "id": inst.id,
-                            "name": inst.name,
-                        }
-                    else:
-                        inst_map[spo_id] = None
-
-                    # Scores payload (from eligibility details)
-                    sec_details = (elig.details or {}).get("sections", {}) if elig.details else {}
-                    impact_norm = (sec_details.get("IMPACT") or {}).get("normalized")
-                    risk_norm = (sec_details.get("RISK") or {}).get("normalized")
-                    return_norm = (sec_details.get("RETURN") or {}).get("normalized")
-
-                    scores_map[spo_id] = {
-                        "overall": float(elig.overall_score) if elig.overall_score is not None else None,
-                        "sections": {
-                            "IMPACT": impact_norm,
-                            "RISK": risk_norm,
-                            "RETURN": return_norm,
-                        },
-                    }
-
-            # Inject the flags per row (defaults)
+            # Inject onto response rows
             for it in items:
                 uid = it.get("id")
                 it["loan_eligible"] = bool(elig_map.get(uid, False))
@@ -235,6 +247,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                 it["assessment_id"] = latest_assessment_map.get(uid, None)
 
             return response
+
         except Exception as e:
             logger.exception("Failed to list SPO users")
             return Response(
@@ -278,7 +291,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
             except ValidationError as exc:
                 logger.info("Admin SPO create validation failed for %s: %s", request.data.get("email"), exc.detail)
                 return Response(
-                    {"message":  _build_validation_message(exc.detail), "errors": exc.detail},
+                    {"message": _build_validation_message(exc.detail), "errors": exc.detail},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             except Exception as e:
@@ -287,6 +300,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                     {"message": "We could not create the SPO right now. Please try again later.", "errors": str(e)},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
+
             try:
                 user = ser.save()
             except Exception as e:
@@ -295,7 +309,9 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                     {"message": "We could not create the SPO right now. Please try again later.", "errors": str(e)},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
+
             return Response(AdminSPOListSerializer(user).data, status=status.HTTP_201_CREATED)
+
         except Exception as e:
             logger.exception("Failed to create SPO user")
             return Response(
@@ -307,11 +323,9 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
         summary="Retrieve SPO (enriched, same shape as list row)",
         description=(
             "Retrieve a single Startup (SPO) user by id.\n\n"
-            "The response shape matches a single row from the list API and is enriched with:\n"
-            "- `loan_eligible`: true if ANY eligible LoanEligibilityResult exists for the SPO's organization\n"
-            "- `instrument`: the latest eligible matched instrument (id + name), if present\n"
-            "- `scores`: summary of the latest eligible assessment (overall + IMPACT/RISK/RETURN section scores)\n"
-            "- `assessment_id`: id of the latest eligible assessment (if any)"
+            "Enrichment is based on the LATEST LoanEligibilityResult (eligible OR not):\n"
+            "- `loan_eligible` = latest result is_eligible\n"
+            "- `instrument`, `scores`, `assessment_id` from latest result (even if not eligible)"
         ),
         responses={
             200: AdminSPOListSerializer,
@@ -367,56 +381,30 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
 
             spo_id = item["id"]
 
-            elig_map = {}
-            inst_map = {}
-            scores_map = {}
-            latest_assessment_map = {}
-
-            elig_qs = (
+            latest = (
                 LoanEligibilityResult.objects
                 .select_related("matched_instrument", "assessment__organization__created_by")
-                .filter(assessment__organization__created_by_id=spo_id, is_eligible=True)
+                .filter(assessment__organization__created_by_id=spo_id)
                 .order_by(
                     "-evaluated_at",
                     "-assessment__submitted_at",
                     "-assessment__started_at",
+                    "-id",  # tie-breaker
                 )
+                .first()
             )
 
-            for elig in elig_qs:
-                org = getattr(elig.assessment, "organization", None)
-                if not org:
-                    continue
+            if not latest:
+                item["loan_eligible"] = False
+                item["instrument"] = None
+                item["scores"] = None
+                item["assessment_id"] = None
+                return response
 
-                _spo_id = org.created_by_id
-                if _spo_id in elig_map:
-                    continue  # already have latest one (same as list)
-
-                elig_map[_spo_id] = True
-                latest_assessment_map[_spo_id] = elig.assessment_id
-
-                inst = elig.matched_instrument
-                inst_map[_spo_id] = {"id": inst.id, "name": inst.name} if inst else None
-
-                sec_details = (elig.details or {}).get("sections", {}) if elig.details else {}
-                impact_norm = (sec_details.get("IMPACT") or {}).get("normalized")
-                risk_norm = (sec_details.get("RISK") or {}).get("normalized")
-                return_norm = (sec_details.get("RETURN") or {}).get("normalized")
-
-                scores_map[_spo_id] = {
-                    "overall": float(elig.overall_score) if elig.overall_score is not None else None,
-                    "sections": {
-                        "IMPACT": impact_norm,
-                        "RISK": risk_norm,
-                        "RETURN": return_norm,
-                    },
-                }
-
-            # Inject the flags (same as list defaults)
-            item["loan_eligible"] = bool(elig_map.get(spo_id, False))
-            item["instrument"] = inst_map.get(spo_id, None)
-            item["scores"] = scores_map.get(spo_id, None)
-            item["assessment_id"] = latest_assessment_map.get(spo_id, None)
+            item["loan_eligible"] = bool(getattr(latest, "is_eligible", False))
+            item["assessment_id"] = latest.assessment_id
+            item["instrument"] = self._extract_instrument_from_ler(latest)
+            item["scores"] = self._extract_scores_from_ler(latest)
 
             return response
 
@@ -438,7 +426,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
         except ValidationError as exc:
             logger.info("Admin SPO update validation failed for %s: %s", kwargs.get(self.lookup_field), exc.detail)
             return Response(
-                {"message":  _build_validation_message(exc.detail), "errors": exc.detail},
+                {"message": _build_validation_message(exc.detail), "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except Http404:
@@ -462,7 +450,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
         except ValidationError as exc:
             logger.info("Admin SPO partial update validation failed for %s: %s", kwargs.get(self.lookup_field), exc.detail)
             return Response(
-                {"message":  _build_validation_message(exc.detail), "errors": exc.detail},
+                {"message": _build_validation_message(exc.detail), "errors": exc.detail},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except Http404:

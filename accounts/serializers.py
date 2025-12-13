@@ -223,6 +223,7 @@ class ProfileSerializer(serializers.Serializer):
     def get_user(self, obj):
         u: User = obj
         return {
+            "id": u.id,
             "email": u.email,
             "first_name": u.first_name,
             "last_name": u.last_name,

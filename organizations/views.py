@@ -3,7 +3,6 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema, OpenApiExample
-from django.shortcuts import get_object_or_404
 
 from organizations.models import OnboardingProgress, Organization
 from organizations.serializers import (
@@ -14,6 +13,7 @@ from organizations.serializers import (
 )
 from organizations.utils import get_or_create_progress
 from organizations.constants import INDIA_STATES
+from questionnaires.models import Question
 
 class OnboardingProgressView(APIView):
     permission_classes = [IsAuthenticated]
@@ -163,12 +163,23 @@ class MetaOptionsView(APIView):
         try:
             def to_key_label(choices):
                 return [{"key": k, "label": v} for k, v in choices]
+            
+            sectors = Question.objects \
+            .values_list("sector", flat=True) \
+            .distinct()
+        
+            sectors = set(sectors)
+
+            sectors = [
+                {"label": sec, "value": sec}
+                for sec in sectors if sec
+            ]
 
             return Response({
                 "registration_types": to_key_label(Organization.RegistrationType.choices),
                 "innovation_types":   to_key_label(Organization.InnovationType.choices),
                 "geo_scopes":         to_key_label(Organization.GeoScope.choices),
-                "focus_sectors":      to_key_label(Organization.FocusSector.choices),
+                "focus_sectors":      sectors,
                 "stages":             to_key_label(Organization.OrgStage.choices),
                 "impact_focus":       to_key_label(Organization.ImpactFocus.choices),
                 "use_of_questionnaire": to_key_label(Organization.UseOfQuestionnaire.choices),

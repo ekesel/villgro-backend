@@ -53,7 +53,7 @@ class Organization(models.Model):
         ENV    = "ENV", "Environmental Impact"
         BOTH   = "BOTH", "Both"
 
-    focus_sector = models.CharField(max_length=20, choices=FocusSector.choices, null=True, blank=True)
+    focus_sector = models.CharField(max_length=255, null=True, blank=True)
     org_stage = models.CharField(max_length=20, choices=OrgStage.choices, null=True, blank=True)
     impact_focus = models.CharField(max_length=10, choices=ImpactFocus.choices, null=True, blank=True)
     annual_operating_budget = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)

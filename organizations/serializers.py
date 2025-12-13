@@ -83,7 +83,7 @@ class Step2Serializer(serializers.Serializer):
 
 
 class Step3Serializer(serializers.Serializer):
-    focus_sector = serializers.ChoiceField(choices=Organization.FocusSector.choices)
+    focus_sector = serializers.CharField(max_length=255)
     org_stage = serializers.ChoiceField(choices=Organization.OrgStage.choices)
     impact_focus = serializers.ChoiceField(choices=Organization.ImpactFocus.choices)
     annual_operating_budget = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)

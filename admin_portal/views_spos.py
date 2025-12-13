@@ -181,7 +181,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                 elig_qs = (
                     LoanEligibilityResult.objects
                     .select_related("matched_instrument", "assessment__organization__created_by")
-                    .filter(assessment__organization__created_by_id__in=user_ids, is_eligible=True)
+                    .filter(assessment__organization__created_by_id__in=user_ids)
                     .order_by(
                         "-evaluated_at",
                         "-assessment__submitted_at",
@@ -354,102 +354,77 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
     )
     def retrieve(self, request, *args, **kwargs):
         """
-        Retrieve a single SPO in the same enriched shape
-        as a row from the list endpoint.
+        Retrieve a single SPO in the same enriched shape as list().
+        (Exactly same enrichment logic as list, but for one object.)
         """
         try:
-            try:
-                user = self.get_object()
-            except Http404:
-                logger.info("SPO not found for retrieve: %s", kwargs.get(self.lookup_field))
-                return Response(
-                    {"message": "SPO not found.", "errors": {}},
-                    status=status.HTTP_404_NOT_FOUND,
+            response = super().retrieve(request, *args, **kwargs)
+
+            # super().retrieve() returns a dict
+            item = response.data
+            if not isinstance(item, dict) or not item.get("id"):
+                return response
+
+            spo_id = item["id"]
+
+            elig_map = {}
+            inst_map = {}
+            scores_map = {}
+            latest_assessment_map = {}
+
+            # EXACTLY same logic as list(): no is_eligible filter, same ordering
+            elig_qs = (
+                LoanEligibilityResult.objects
+                .select_related("matched_instrument", "assessment__organization__created_by")
+                .filter(assessment__organization__created_by_id=spo_id)
+                .order_by(
+                    "-evaluated_at",
+                    "-assessment__submitted_at",
+                    "-assessment__started_at",
                 )
-            except Exception as e:
-                logger.exception("Failed to fetch SPO for retrieve %s", kwargs.get(self.lookup_field))
-                return Response(
-                    {
-                        "message": "We could not fetch the SPO right now. Please try again later.",
-                        "errors": str(e),
+            )
+
+            for elig in elig_qs:
+                org = getattr(elig.assessment, "organization", None)
+                if not org:
+                    continue
+
+                _spo_id = org.created_by_id
+                if _spo_id in elig_map:
+                    continue  # already have latest one (same as list)
+
+                elig_map[_spo_id] = True
+                latest_assessment_map[_spo_id] = elig.assessment_id
+
+                inst = elig.matched_instrument
+                inst_map[_spo_id] = {"id": inst.id, "name": inst.name} if inst else None
+
+                sec_details = (elig.details or {}).get("sections", {}) if elig.details else {}
+                impact_norm = (sec_details.get("IMPACT") or {}).get("normalized")
+                risk_norm = (sec_details.get("RISK") or {}).get("normalized")
+                return_norm = (sec_details.get("RETURN") or {}).get("normalized")
+
+                scores_map[_spo_id] = {
+                    "overall": float(elig.overall_score) if elig.overall_score is not None else None,
+                    "sections": {
+                        "IMPACT": impact_norm,
+                        "RISK": risk_norm,
+                        "RETURN": return_norm,
                     },
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
+                }
 
-            # Base payload from serializer (same as list)
-            data = AdminSPOListSerializer(user).data
+            # Inject the flags (same as list defaults)
+            item["loan_eligible"] = bool(elig_map.get(spo_id, False))
+            item["instrument"] = inst_map.get(spo_id, None)
+            item["scores"] = scores_map.get(spo_id, None)
+            item["assessment_id"] = latest_assessment_map.get(spo_id, None)
 
-            spo_id = user.id
-            loan_eligible = False
-            instrument_payload = None
-            scores_payload = None
-            latest_assessment_id = None
-
-            try:
-                # Latest ELIGIBLE result for this SPO (if any)
-                elig_qs = (
-                    LoanEligibilityResult.objects
-                    .select_related("matched_instrument", "assessment__organization__created_by")
-                    .filter(assessment__organization__created_by_id=spo_id, is_eligible=True)
-                    .order_by(
-                        "-evaluated_at",
-                        "-assessment__submitted_at",
-                        "-assessment__started_at",
-                    )
-                )
-                elig = elig_qs.first()
-
-                if elig is not None:
-                    loan_eligible = True
-                    latest_assessment_id = elig.assessment_id
-
-                    inst = elig.matched_instrument
-                    if inst:
-                        instrument_payload = {
-                            "id": inst.id,
-                            "name": inst.name,
-                        }
-
-                    sec_details = (elig.details or {}).get("sections", {}) if elig.details else {}
-                    impact_norm = (sec_details.get("IMPACT") or {}).get("normalized")
-                    risk_norm = (sec_details.get("RISK") or {}).get("normalized")
-                    return_norm = (sec_details.get("RETURN") or {}).get("normalized")
-
-                    scores_payload = {
-                        "overall": float(elig.overall_score) if elig.overall_score is not None else None,
-                        "sections": {
-                            "IMPACT": impact_norm,
-                            "RISK": risk_norm,
-                            "RETURN": return_norm,
-                        },
-                    }
-            except Exception as e:
-                logger.exception("Failed to enrich SPO retrieve with eligibility data for %s", spo_id)
-                # we still return base data, just without enrichment
-                # but we keep error structure consistent
-                return Response(
-                    {
-                        "message": "We could not fetch eligibility data for this SPO.",
-                        "errors": str(e),
-                    },
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-
-            # Inject enrichment fields (same as list)
-            data["loan_eligible"] = loan_eligible
-            data["instrument"] = instrument_payload
-            data["scores"] = scores_payload
-            data["assessment_id"] = latest_assessment_id
-
-            return Response(data, status=status.HTTP_200_OK)
+            return response
 
         except Exception as e:
             logger.exception("Failed to retrieve SPO %s", kwargs.get(self.lookup_field))
             return Response(
-                {
-                    "message": "We could not fetch the SPO right now. Please try again later.",
-                    "errors": str(e),
-                },
+                {"message": "We could not fetch the SPO right now. Please try again later.", "errors": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 

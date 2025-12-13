@@ -181,7 +181,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                 elig_qs = (
                     LoanEligibilityResult.objects
                     .select_related("matched_instrument", "assessment__organization__created_by")
-                    .filter(assessment__organization__created_by_id__in=user_ids)
+                    .filter(assessment__organization__created_by_id__in=user_ids, is_eligible=True)
                     .order_by(
                         "-evaluated_at",
                         "-assessment__submitted_at",
@@ -372,11 +372,10 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
             scores_map = {}
             latest_assessment_map = {}
 
-            # EXACTLY same logic as list(): no is_eligible filter, same ordering
             elig_qs = (
                 LoanEligibilityResult.objects
                 .select_related("matched_instrument", "assessment__organization__created_by")
-                .filter(assessment__organization__created_by_id=spo_id)
+                .filter(assessment__organization__created_by_id=spo_id, is_eligible=True)
                 .order_by(
                     "-evaluated_at",
                     "-assessment__submitted_at",

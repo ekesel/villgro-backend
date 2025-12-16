@@ -193,6 +193,7 @@ class BankSPOViewSet(viewsets.ViewSet):
                     inst_map[spo_id] = {
                         "id": inst.id,
                         "name": inst.name,
+                        "description": inst.description,
                     }
                 else:
                     inst_map[spo_id] = None

@@ -117,7 +117,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
         inst = getattr(ler, "matched_instrument", None)
         if not inst:
             return None
-        return {"id": inst.id, "name": inst.name}
+        return {"id": inst.id, "name": inst.name, "description": inst.description}
 
     @extend_schema(
         summary="List SPOs",
@@ -685,7 +685,7 @@ class SPOAdminViewSet(viewsets.ModelViewSet):
                         },
                     },
                     "instrument": (
-                        {"id": getattr(inst, "id", None), "name": getattr(inst, "name", None)}
+                        {"id": getattr(inst, "id", None), "name": getattr(inst, "name", None), "description": getattr(inst, "description", None)}
                         if inst else None
                     ),
                     "eligibility": (

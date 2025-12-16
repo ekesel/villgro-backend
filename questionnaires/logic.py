@@ -374,13 +374,7 @@ def _pick_instrument(
     if not matched:
         return None
 
-    stage_str = (stage or "").upper()
-
     desc = matched.text
-    if stage_str:
-        desc = f"{desc}\n\n(Stage: {stage_str}. Impact={I:.2f}, Risk={R:.2f}, Return={Ret:.2f})"
-    else:
-        desc = f"{desc}\n\n(Impact={I:.2f}, Risk={R:.2f}, Return={Ret:.2f})"
 
     inst, created = LoanInstrument.objects.get_or_create(
         name=matched.name,

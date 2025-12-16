@@ -474,52 +474,7 @@ class SubmitAssessmentView(APIView):
             if missing:
                 return Response({"message": "Missing answers", "sections": missing, "errors": {}}, status=400)
 
-            # scoring (simplified)
-            scores = {"sections": {}, "overall": 0}
-            total = 0
-            count = 0
-            answers_map = build_answers_map(assessment)
-            for sec in Section.objects.all():
-                visible = visible_questions_for_section(assessment, sec)
-                if not visible:
-                    continue
-                sec_score = 0
-                sec_count = 0
-                for q in visible:
-                    ans = answers_map.get(q.code)
-                    if not ans:
-                        continue
-                    points = 0
-                    if q.type in ["SINGLE_CHOICE", "NPS"]:
-                        val = ans.get("value")
-                        opt = q.options.filter(value=val).first()
-                        if opt:
-                            points = float(opt.points)
-                    elif q.type == "MULTI_CHOICE":
-                        vals = set(ans.get("values", []))
-                        for opt in q.options.all():
-                            if opt.value in vals:
-                                points += float(opt.points)
-                    elif q.type in ["SLIDER", "RATING"]:
-                        val = ans.get("value")
-                        if val is not None:
-                            points = float(val)
-                    elif q.type == "MULTI_SLIDER":
-                        vals = ans.get("values", {})
-                        for d in q.dimensions.all():
-                            if d.code in vals:
-                                points += float(vals[d.code]) * float(d.points_per_unit) * float(d.weight)
-                    sec_score += points * float(q.weight)
-                    sec_count += 1
-                if sec_count > 0 and sec.code != "FEEDBACK":
-                    avg = sec_score / sec_count
-                    scores["sections"][sec.code] = round(avg, 2)
-                    total += avg
-                    count += 1
-            scores["overall"] = round(total / count, 2) if count else 0
             scores, _breakdown = compute_scores(assessment)
-            print(_breakdown)
-            print(scores)
             assessment.status = "SUBMITTED"
             assessment.submitted_at = timezone.now()
             config = AdminConfig.get_solo()

@@ -518,6 +518,8 @@ class SubmitAssessmentView(APIView):
                     count += 1
             scores["overall"] = round(total / count, 2) if count else 0
             scores, _breakdown = compute_scores(assessment)
+            print(_breakdown)
+            print(scores)
             assessment.status = "SUBMITTED"
             assessment.submitted_at = timezone.now()
             config = AdminConfig.get_solo()

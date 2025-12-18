@@ -131,9 +131,10 @@ class CurrentAssessmentView(APIView):
     def get(self, request):
         try:
             org = request.user.organization
+            first_time = False if org.assessments.all().count() > 0 else True
             draft = org.assessments.filter(status="DRAFT").first()
             if not draft:
-                return Response({"message": "No active assessment", "errors": {}}, status=404)
+                return Response({"message": "No active assessment", "errors": {}, "first_time": first_time}, status=404)
             progress = compute_progress(draft)
             data = AssessmentSerializer(draft).data
             data["progress"] = {
@@ -143,6 +144,7 @@ class CurrentAssessmentView(APIView):
                 "by_section": progress["by_section"],
             }
             data["resume"] = {"last_section": progress.get("last_section")}
+            data["first_time"] = first_time
             return Response(data)
         except Exception as e:
             return Response(

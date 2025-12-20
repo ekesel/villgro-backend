@@ -131,7 +131,7 @@ class CurrentAssessmentView(APIView):
     def get(self, request):
         try:
             org = request.user.organization
-            first_time = False if org.assessments.all().count() > 0 else True
+            first_time = False if org.assessments.exclude(status="DRAFT").count() > 0 else True
             draft = org.assessments.filter(status="DRAFT").first()
             if not draft:
                 return Response({"message": "No active assessment", "errors": {}, "first_time": first_time}, status=404)

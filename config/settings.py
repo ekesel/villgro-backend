@@ -165,7 +165,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
-INSTALLED_APPS += ["whitenoise.runserver_nostatic"]
+INSTALLED_APPS += ["whitenoise.runserver_nostatic", "anymail"]
 MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 STATIC_ROOT = "/app/staticfiles"
@@ -176,13 +176,12 @@ STATIC_URL = "/django-static/"
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.mailgun.org")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "postmaster@YOUR_DOMAIN.mailgun.org")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "YOUR_MAILGUN_SMTP_PASSWORD")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@YOUR_DOMAIN")
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "")
+ANYMAIL = {
+    "MAILCHIMP_API_KEY": os.getenv("EMAIL_API_KEY", ""),
+    "MAILCHIMP_SEND_DEFAULTS": {"track_opens": True, "track_clicks": True},
+}
 
 LOG_DIR = BASE_DIR / "logs"
 os.makedirs(LOG_DIR, exist_ok=True)

@@ -176,12 +176,16 @@ STATIC_URL = "/django-static/"
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "")
-ANYMAIL = {
-    "MAILCHIMP_API_KEY": os.getenv("EMAIL_API_KEY", ""),
-    "MAILCHIMP_SEND_DEFAULTS": {"track_opens": True, "track_clicks": True},
-}
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND")
+EMAIL_HOST = os.getenv("EMAIL_HOST")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() == "true"
+
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
+
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL")
+EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 
 LOG_DIR = BASE_DIR / "logs"
 os.makedirs(LOG_DIR, exist_ok=True)

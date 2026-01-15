@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 from dataclasses import dataclass
-from typing import Dict, Tuple, List, Optional, Any
+from typing import Dict, Tuple, List, Optional, Any, Union
 from questionnaires.models import Section, EligibilityRule, LoanEligibilityResult, LoanInstrument
 
 Rule = Dict[str, Any]
@@ -153,10 +153,12 @@ def _load_section_rules() -> Dict[str, EligibilityRule]:
 @dataclass(frozen=True)
 class InstrumentRule:
     name: str
-    impact_range: Tuple[int, int]   # inclusive
-    risk_range: Tuple[int, int]     # inclusive
-    return_range: Tuple[int, int]   # inclusive
+    impact_range: Tuple[int, float]   # inclusive
+    risk_range: Tuple[int, float]     # inclusive
+    return_range: Tuple[int, float]   # inclusive
     text: str
+
+RANGE_EPS = 0.9999
 
 INSTRUMENT_RULES: List[InstrumentRule] = [
     # -------------------- RETURN 67-100 --------------------
@@ -354,8 +356,9 @@ def _pick_instrument(
         except Exception:
             return 0.0
 
-    def in_range(v: float, lo: int, hi: int) -> bool:
-        return lo <= v <= hi
+    def in_range(v: float, lo: Union[int, float], hi: Union[int, float]) -> bool:
+        hi_eff = float(hi) + RANGE_EPS
+        return float(lo) <= v <= hi_eff
 
     I = get_norm("IMPACT")
     R = get_norm("RISK")

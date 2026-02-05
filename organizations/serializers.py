@@ -58,7 +58,7 @@ class Step2Serializer(serializers.Serializer):
         child=serializers.CharField(max_length=64),
         allow_empty=True, required=False
     )
-    extra_info = serializers.CharField(max_length=8000, allow_empty=True, required=False)
+    extra_info = serializers.CharField(max_length=8000, required=False)
 
     def validate_top_states(self, value):
         if len(value) > 5:
@@ -91,7 +91,7 @@ class Step3Serializer(serializers.Serializer):
     annual_operating_budget = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
     use_of_questionnaire = serializers.ChoiceField(choices=Organization.UseOfQuestionnaire.choices)
     received_philanthropy_before = serializers.BooleanField()
-    org_desc = serializers.CharField(max_length=8000, allow_empty=True, required=False)
+    org_desc = serializers.CharField(max_length=8000, required=False)
 
     def save(self, **kwargs):
         org: Organization = self.context["organization"]

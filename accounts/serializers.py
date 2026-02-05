@@ -121,13 +121,15 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
         if user.is_active is False:
             raise serializers.ValidationError("User account is inactive.")
 
+        org = Organization.objects.filter(created_by=user).last()
         # enrich response
         data["user"] = {
             "email": user.email,
             "first_name": user.first_name,
             "last_name": user.last_name,
             "role": user.role,
-            "id": user.id
+            "id": user.id,
+            "org_desc": org.org_desc if org else ""
         }
         data["has_completed_profile"] = bool(prog.is_complete)
         data["onboarding"] = {

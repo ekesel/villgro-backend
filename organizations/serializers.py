@@ -58,6 +58,7 @@ class Step2Serializer(serializers.Serializer):
         child=serializers.CharField(max_length=64),
         allow_empty=True, required=False
     )
+    extra_info = serializers.CharField(max_length=8000, allow_empty=True, required=False)
 
     def validate_top_states(self, value):
         if len(value) > 5:
@@ -73,7 +74,8 @@ class Step2Serializer(serializers.Serializer):
         org.type_of_innovation = self.validated_data["type_of_innovation"]
         org.geo_scope = self.validated_data["geo_scope"]
         org.top_states = self.validated_data.get("top_states", [])
-        org.save(update_fields=["type_of_innovation", "geo_scope", "top_states"])
+        org.extra_info = self.validated_data.get("extra_info", "")
+        org.save(update_fields=["type_of_innovation", "geo_scope", "top_states", "extra_info"])
         # progress jump to step 3
         prog: OnboardingProgress = self.context["progress"]
         if prog.current_step < 3:
@@ -89,14 +91,15 @@ class Step3Serializer(serializers.Serializer):
     annual_operating_budget = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
     use_of_questionnaire = serializers.ChoiceField(choices=Organization.UseOfQuestionnaire.choices)
     received_philanthropy_before = serializers.BooleanField()
+    org_desc = serializers.CharField(max_length=8000, allow_empty=True, required=False)
 
     def save(self, **kwargs):
         org: Organization = self.context["organization"]
-        for f in ["focus_sector","org_stage","impact_focus","annual_operating_budget","use_of_questionnaire","received_philanthropy_before"]:
+        for f in ["focus_sector","org_stage","impact_focus","annual_operating_budget","use_of_questionnaire","received_philanthropy_before", "org_desc"]:
             setattr(org, f, self.validated_data[f])
         org.save(update_fields=[
             "focus_sector","org_stage","impact_focus","annual_operating_budget",
-            "use_of_questionnaire","received_philanthropy_before"
+            "use_of_questionnaire","received_philanthropy_before", "org_desc"
         ])
         return org
 

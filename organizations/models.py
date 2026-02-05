@@ -11,6 +11,8 @@ class Organization(models.Model):
 
     name = models.CharField(max_length=255)
     date_of_incorporation = models.DateField(null=True, blank=True)
+    org_desc = models.CharField(max_length=8000, blank=True, null=True)
+    extra_info = models.CharField(max_length=8000, blank=True, null=True)
     gst_number = models.CharField(max_length=50, blank=True)
     cin_number = models.CharField(max_length=50, blank=True)
     registration_type = models.CharField(max_length=20, choices=RegistrationType.choices)

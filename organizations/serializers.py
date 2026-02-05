@@ -95,12 +95,13 @@ class Step3Serializer(serializers.Serializer):
 
     def save(self, **kwargs):
         org: Organization = self.context["organization"]
-        for f in ["focus_sector","org_stage","impact_focus","annual_operating_budget","use_of_questionnaire","received_philanthropy_before", "org_desc"]:
-            setattr(org, f, self.validated_data[f])
-        org.save(update_fields=[
-            "focus_sector","org_stage","impact_focus","annual_operating_budget",
-            "use_of_questionnaire","received_philanthropy_before", "org_desc"
-        ])
+        
+        for key, value in self.validated_data.items():
+            setattr(org, key, value)
+        
+        # Update only the fields that were present in validated_data
+        org.save(update_fields=self.validated_data.keys())
+        
         return org
 
 

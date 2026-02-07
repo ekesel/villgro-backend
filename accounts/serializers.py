@@ -244,6 +244,7 @@ class ProfileSerializer(serializers.Serializer):
             "date_of_incorporation": org.date_of_incorporation,
             "gst_number": org.gst_number,
             "cin_number": org.cin_number,
+            "org_desc": org.org_desc if org else ""
         }
 
 class ProfileUpdateSerializer(serializers.Serializer):

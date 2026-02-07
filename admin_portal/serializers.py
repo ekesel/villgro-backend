@@ -382,7 +382,7 @@ class AdminSPOOrgSerializer(serializers.ModelSerializer):
             "type_of_innovation", "geo_scope", "top_states",
             "focus_sector", "org_stage", "impact_focus",
             "annual_operating_budget", "use_of_questionnaire",
-            "received_philanthropy_before",
+            "received_philanthropy_before", "org_desc",
         ]
         read_only_fields = ["id"]
 

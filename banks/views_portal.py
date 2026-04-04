@@ -142,7 +142,7 @@ class BankSPOViewSet(viewsets.ViewSet):
                     .values_list("assessment__organization__created_by_id", flat=True)
                     .distinct()
             )
-            qs = qs.filter(id__in=eligible_spo_ids)
+            qs = qs.filter(id__in=eligible_spo_ids).order_by("-id")
 
             # total AFTER eligibility + filters
             total_count = qs.count()

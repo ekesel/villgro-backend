@@ -127,11 +127,6 @@ class BankSPOViewSet(viewsets.ViewSet):
             if jt:
                 qs = qs.filter(date_joined__lte=jt)
 
-            ordering = request.query_params.get("ordering") or "-id"
-            if ordering not in ("id", "-id"):
-                ordering = "-id"
-            qs = qs.order_by(ordering)
-
             # --- restrict to SPOs that are loan-eligible ---
             eligible_spo_ids = (
                 LoanEligibilityResult.objects
@@ -142,7 +137,18 @@ class BankSPOViewSet(viewsets.ViewSet):
                     .values_list("assessment__organization__created_by_id", flat=True)
                     .distinct()
             )
-            qs = qs.filter(id__in=eligible_spo_ids).order_by("-id")
+            
+            qs = qs.filter(id__in=eligible_spo_ids).annotate(
+                latest_assessment_date=Max("organization__assessments__submitted_at")
+            )
+
+            ordering = request.query_params.get("ordering")
+            if ordering == "id":
+                qs = qs.order_by("id", "-latest_assessment_date")
+            elif ordering == "-id":
+                qs = qs.order_by("-id", "-latest_assessment_date")
+            else:
+                qs = qs.order_by("-latest_assessment_date", "-id")
 
             # total AFTER eligibility + filters
             total_count = qs.count()

@@ -235,10 +235,16 @@ class BankSPOViewSet(viewsets.ViewSet):
             )
             last_lr_map = {x["organization__created_by_id"]: x["last_lr"] for x in last_lr}
 
-            rows = []
+            users_map = {}
             for u in User.objects.filter(id__in=ids).select_related("organization"):
+                users_map[u.id] = u
+
+            rows = []
+            for spo_id in ids:
+                u = users_map.get(spo_id)
+                if not u:
+                    continue
                 org = getattr(u, "organization", None)
-                spo_id = u.id
                 rows.append({
                     "id": u.id,
                     "email": u.email,
